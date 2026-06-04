@@ -1,0 +1,17 @@
+[package]
+name = "subjudge"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8.9", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+# 序列化 (必须严格对齐规范的字段名)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# 时间处理 (CLICS 规范对 ISO 8601 要求严格)
+chrono = { version = "0.4", features = ["serde"] }
+# 数据库 ORM (如前所述，SeaORM 是 Axum 的好搭档)
+sea-orm = { version = "0.12", features = ["runtime-tokio-rustls", "sqlx-postgres", "macros"] }
+# 错误处理
+anyhow = "1.0"
