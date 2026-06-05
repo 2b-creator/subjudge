@@ -21,11 +21,12 @@
 //! - **capabilities**: Actions the client can perform (e.g., submit, judge, start contest)
 //! - **endpoints**: API endpoints available and which properties are visible
 
+use crate::auth::{OptionalAuthUser, UserRole};
 use crate::models::access::{AccessResponse, EndpointInfo};
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    Json,
 };
 use sea_orm::DatabaseConnection;
 
@@ -60,57 +61,47 @@ use sea_orm::DatabaseConnection;
 ///
 /// # Implementation Status
 ///
-/// **TODO**: Currently returns mock data for `ClientRole::Public`. A full implementation should:
-/// 1. Authenticate the client (JWT token, session cookie, etc.)
-/// 2. Determine the client's role from the authentication context
-/// 3. Check the contest's current state
-/// 4. Query the database for role-specific access permissions
+/// ✅ **IMPLEMENTED**: Now uses JWT-based authentication to determine client role.
+/// 1. Extracts JWT token from Authorization header
+/// 2. Validates token and extracts user role
+/// 3. Returns role-specific access information
+/// 4. Falls back to public access for unauthenticated requests
+///
+/// # Authentication
+///
+/// Include a JWT token in the Authorization header:
+/// ```
+/// Authorization: Bearer <jwt-token>
+/// ```
 ///
 /// # Examples
 ///
 /// ```bash
+/// # Unauthenticated (public access)
 /// GET /api/contests/contest123/access
+///
+/// # Authenticated (role-based access)
+/// GET /api/contests/contest123/access
+/// Authorization: Bearer eyJhbGc...
 /// ```
 pub async fn get_access(
     State(_db): State<DatabaseConnection>,
     Path(contest_id): Path<String>,
+    OptionalAuthUser(auth_user): OptionalAuthUser,
 ) -> Result<Json<AccessResponse>, StatusCode> {
-    // TODO: Implement proper authentication and authorization
-    // For now, we'll return a mock response based on contest_id
+    // Determine client role from authentication
+    let role = match auth_user {
+        Some(user) => user.role,
+        None => UserRole::Public,
+    };
 
-    // In a real implementation, you would:
-    // 1. Authenticate the current client (from JWT token, session, etc.)
-    // 2. Determine the client's role (team, admin, public, etc.)
-    // 3. Check the contest state (before/during/after)
-    // 4. Query the database to determine what endpoints/properties are accessible
-
-    let access = build_access_response(&contest_id, ClientRole::Public);
+    // Build access response based on authenticated role
+    let access = build_access_response(&contest_id, role);
 
     Ok(Json(access))
 }
 
-/// Client role types used for determining access levels.
-///
-/// This enum represents the three main types of clients that interact with the contest API.
-/// Each role has different permissions and visibility into contest data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ClientRole {
-    /// Public/unauthenticated access.
-    ///
-    /// Can view basic contest information but cannot perform any actions.
-    /// Typically used for spectators or public scoreboards.
-    Public,
-    /// Team participant access.
-    ///
-    /// Can submit solutions, view their own submissions, request clarifications,
-    /// and see limited contest data. Cannot see other teams' code or detailed results.
-    Team,
-    /// Admin/judge access.
-    ///
-    /// Full access to all contest data and control operations. Can start/stop contests,
-    /// judge submissions, respond to clarifications, and view all system information.
-    Admin,
-}
+// Note: ClientRole is now replaced by UserRole from the auth module
 
 /// Builds an AccessResponse based on contest ID and client role.
 ///
@@ -125,11 +116,11 @@ enum ClientRole {
 /// # Returns
 ///
 /// An `AccessResponse` with capabilities and endpoints appropriate for the role
-fn build_access_response(contest_id: &str, role: ClientRole) -> AccessResponse {
+fn build_access_response(contest_id: &str, role: UserRole) -> AccessResponse {
     match role {
-        ClientRole::Admin => build_admin_access(contest_id),
-        ClientRole::Team => build_team_access(contest_id),
-        ClientRole::Public => build_public_access(contest_id),
+        UserRole::Admin | UserRole::Judge => build_admin_access(contest_id),
+        UserRole::Team => build_team_access(contest_id),
+        UserRole::Public => build_public_access(contest_id),
     }
 }
 
@@ -216,11 +207,7 @@ fn build_admin_access(_contest_id: &str) -> AccessResponse {
             },
             EndpointInfo {
                 r#type: "groups".to_string(),
-                properties: vec![
-                    "id".to_string(),
-                    "name".to_string(),
-                    "type".to_string(),
-                ],
+                properties: vec!["id".to_string(), "name".to_string(), "type".to_string()],
             },
             EndpointInfo {
                 r#type: "submissions".to_string(),
@@ -322,10 +309,7 @@ fn build_team_access(_contest_id: &str) -> AccessResponse {
             },
             EndpointInfo {
                 r#type: "teams".to_string(),
-                properties: vec![
-                    "id".to_string(),
-                    "name".to_string(),
-                ],
+                properties: vec!["id".to_string(), "name".to_string()],
             },
             EndpointInfo {
                 r#type: "submissions".to_string(),
@@ -407,10 +391,7 @@ fn build_public_access(_contest_id: &str) -> AccessResponse {
             },
             EndpointInfo {
                 r#type: "teams".to_string(),
-                properties: vec![
-                    "id".to_string(),
-                    "name".to_string(),
-                ],
+                properties: vec!["id".to_string(), "name".to_string()],
             },
         ],
     }

@@ -16,6 +16,7 @@
 //! teams and their many-to-many relationships with groups. Other sync functions operate on
 //! single entities without explicit transactions.
 
+use crate::auth::AuthUser;
 use crate::models::{Syncable, groups, team_group, teams, contests,organizations};
 use axum::{Json, extract::State};
 use sea_orm::{
@@ -67,9 +68,15 @@ use sea_orm::{
 /// ]
 /// ```
 pub async fn sync_teams(
+    auth_user: AuthUser,
     State(db): State<DatabaseConnection>,
     Json(payload): Json<Vec<serde_json::Value>>,
 ) -> Result<String, String> {
+    // Check if user has admin role
+    if !auth_user.role.is_admin() {
+        return Err("Forbidden: Admin access required".to_string());
+    }
+
     // 1. 使用事务确保数据完整性
     let txn = db.begin().await.map_err(|e| format!("DB Error: {}", e))?;
 
@@ -163,9 +170,15 @@ pub async fn sync_teams(
 /// ]
 /// ```
 pub async fn sync_groups(
+    auth_user: AuthUser,
     State(db): State<DatabaseConnection>,
     Json(payload): Json<Vec<serde_json::Value>>,
 ) -> Result<String, String> {
+    // Check if user has admin role
+    if !auth_user.role.is_admin() {
+        return Err("Forbidden: Admin access required".to_string());
+    }
+
     // println!("接口被触发了！");
     let mut active_models = Vec::new();
 
@@ -231,9 +244,15 @@ pub async fn sync_groups(
 /// ]
 /// ```
 pub async fn sync_contests(
+    auth_user: AuthUser,
     State(db): State<DatabaseConnection>,
     Json(payload): Json<Vec<serde_json::Value>>,
 ) -> Result<String, String> {
+    // Check if user has admin role
+    if !auth_user.role.is_admin() {
+        return Err("Forbidden: Admin access required".to_string());
+    }
+
     // println!("接口被触发了！");
     let mut active_models = Vec::new();
 
@@ -298,9 +317,15 @@ pub async fn sync_contests(
 /// ]
 /// ```
 pub async fn sync_organizations(
+    auth_user: AuthUser,
     State(db): State<DatabaseConnection>,
     Json(payload): Json<Vec<serde_json::Value>>,
 ) -> Result<String, String> {
+    // Check if user has admin role
+    if !auth_user.role.is_admin() {
+        return Err("Forbidden: Admin access required".to_string());
+    }
+
     // println!("接口被触发了！");
     let mut active_models = Vec::new();
 
