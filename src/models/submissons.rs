@@ -1,7 +1,7 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, serde::Serialize, serde::Deserialize)]
-#[sea_orm(table_name = "submission")]
+#[sea_orm(table_name = "submissions")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,

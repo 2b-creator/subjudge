@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::models::Syncable;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "group")]
+#[sea_orm(table_name = "groups")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
@@ -11,6 +11,7 @@ pub struct Model {
     pub name: String,
     // 使用 sea_orm 的 column_name 属性将数据库字段名映射为 group_type
     #[sea_orm(column_name = "type")] 
+    #[serde(rename = "type")]
     pub group_type: String, 
     pub location: Option<String>,
 }

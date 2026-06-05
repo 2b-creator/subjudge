@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::models::Syncable;
 
 #[derive(Clone, Debug, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "organization")]
+#[sea_orm(table_name = "organizations")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String, // ID

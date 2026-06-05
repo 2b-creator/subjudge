@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 #[derive(Clone, Debug, DeriveEntityModel, DeriveActiveModelBehavior, Serialize, Deserialize)]
-#[sea_orm(table_name = "team")]
+#[sea_orm(table_name = "teams")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
@@ -26,9 +26,9 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::organization::Entity",
+        belongs_to = "super::organizations::Entity",
         from = "Column::OrganizationId",
-        to = "super::organization::Column::Id"
+        to = "super::organizations::Column::Id"
     )]
     Organization,
 }
