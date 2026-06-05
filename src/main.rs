@@ -22,6 +22,8 @@ async fn main() {
         )
         .route("/contests/{id}/access", get(api::access::get_access))
         .route("/contests/{id}/teams", get(api::contests::get_contest_teams))
+        .route("/contests/{id}/judgement-types", get(api::contests::get_contest_judgement_types))
+        .route("/contests/{id}/judgement-types/{judgement_type_id}", get(api::contests::get_contest_judgement_type))
         .route("/sync/teams", axum::routing::post(api::sync::sync_teams))
         .route("/sync/groups", axum::routing::post(api::sync::sync_groups))
         .route(

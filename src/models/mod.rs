@@ -6,7 +6,11 @@ pub mod teams;
 pub mod team_group;
 pub mod access;
 pub mod contests;
-pub mod judgement;
+pub mod judgements;
+pub mod languages;
+pub mod problems;
+pub mod accounts;
+pub mod submissions;
 
 use sea_orm::ActiveModelTrait;
 use serde_json::Value;

@@ -28,6 +28,7 @@
 use crate::models::contests::{Entity as Contest, Model as ContestModel};
 use crate::models::teams::{Entity as Team, Model as TeamModel};
 use crate::models::team_group::{Entity as TeamGroup};
+use crate::models::judgements::{Entity as Judgement, Model as JudgementModel};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -453,6 +454,122 @@ pub async fn get_contest_teams(
 
     Ok(Json(teams))
 }
+
+/// Retrieves all judgement types for a contest.
+///
+/// Returns the complete list of possible judgement responses from the judging system.
+/// These represent outcomes like "Accepted", "Wrong Answer", "Time Limit Exceeded", etc.
+///
+/// # Arguments
+///
+/// * `db` - Database connection extracted from application state
+/// * `contest_id` - Path parameter with the contest identifier
+///
+/// # Returns
+///
+/// * `Ok(Json<Vec<JudgementModel>>)` - List of all judgement types
+/// * `Err(StatusCode::NOT_FOUND)` - If the contest doesn't exist
+/// * `Err(StatusCode::INTERNAL_SERVER_ERROR)` - If database query fails
+///
+/// # Examples
+///
+/// ```bash
+/// GET /api/contests/icpc2026/judgement-types
+/// ```
+///
+/// Response:
+/// ```json
+/// [
+///   {
+///     "id": "AC",
+///     "name": "Accepted",
+///     "penalty": false,
+///     "solved": true,
+///     "simplified_judgement_type_id": null
+///   },
+///   {
+///     "id": "WA",
+///     "name": "Wrong Answer",
+///     "penalty": true,
+///     "solved": false,
+///     "simplified_judgement_type_id": null
+///   }
+/// ]
+/// ```
+pub async fn get_contest_judgement_types(
+    State(db): State<DatabaseConnection>,
+    Path(contest_id): Path<String>,
+) -> Result<Json<Vec<JudgementModel>>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Fetch all judgement types
+    let judgements = Judgement::find()
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(judgements))
+}
+
+/// Retrieves a specific judgement type for a contest.
+///
+/// Returns details about a single judgement type identified by its ID
+/// (typically a 2-3 letter capitalized shorthand like "AC", "WA", "TLE").
+///
+/// # Arguments
+///
+/// * `db` - Database connection extracted from application state
+/// * `contest_id` - Path parameter with the contest identifier
+/// * `judgement_type_id` - Path parameter with the judgement type identifier
+///
+/// # Returns
+///
+/// * `Ok(Json<JudgementModel>)` - The requested judgement type
+/// * `Err(StatusCode::NOT_FOUND)` - If the contest or judgement type doesn't exist
+/// * `Err(StatusCode::INTERNAL_SERVER_ERROR)` - If database query fails
+///
+/// # Examples
+///
+/// ```bash
+/// GET /api/contests/icpc2026/judgement-types/AC
+/// ```
+///
+/// Response:
+/// ```json
+/// {
+///   "id": "AC",
+///   "name": "Accepted",
+///   "penalty": false,
+///   "solved": true,
+///   "simplified_judgement_type_id": null
+/// }
+/// ```
+pub async fn get_contest_judgement_type(
+    State(db): State<DatabaseConnection>,
+    Path((contest_id, judgement_type_id)): Path<(String, String)>,
+) -> Result<Json<JudgementModel>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Fetch the specific judgement type
+    let judgement = Judgement::find_by_id(judgement_type_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(judgement))
+}
+
 
 #[cfg(test)]
 mod tests {
