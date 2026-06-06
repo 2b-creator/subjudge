@@ -19,6 +19,12 @@ pub struct Model {
     #[serde(rename = "type")]
     pub account_type: String,
     pub team_id: Option<String>,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

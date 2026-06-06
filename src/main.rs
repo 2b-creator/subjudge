@@ -13,13 +13,17 @@ async fn main() {
         .await
         .expect("Failed to connect to DB");
 
-    let api_routes = Router::new()
+    // Public routes that don't require authentication
+    let public_routes = Router::new()
         .route("/version", get(|| async { "v0.1.0" }))
-        .route("/submissions", get(|| async { "List submissions" }))
-        // Authentication endpoints
-        .route("/auth/login", axum::routing::post(api::auth::login))
-        .route("/auth/me", get(api::auth::get_current_user))
         .route("/auth/health", get(api::auth::health_check))
+        // Login endpoint for JWT token generation (alternative auth method)
+        .route("/auth/login", axum::routing::post(api::auth::login));
+
+    // Protected routes that require authentication (HTTP Basic Auth or Bearer token)
+    let protected_routes = Router::new()
+        .route("/submissions", get(|| async { "List submissions" }))
+        .route("/auth/me", get(api::auth::get_current_user))
         // Contest endpoints
         .route("/contests/{id}", get(api::contests::get_contest))
         .route(
@@ -40,7 +44,22 @@ async fn main() {
         .route(
             "/sync/organizations",
             axum::routing::post(api::sync::sync_organizations),
-        );
+        )
+        // Admin endpoints for account management
+        .route("/admin/accounts", get(api::admin::accounts::list_accounts))
+        .route("/admin/accounts/{account_id}", get(api::admin::accounts::get_account_status))
+        .route("/admin/accounts/{account_id}/status", axum::routing::patch(api::admin::accounts::update_account_status))
+        .route("/admin/accounts/{account_id}/disable", axum::routing::post(api::admin::accounts::disable_account))
+        .route("/admin/accounts/{account_id}/enable", axum::routing::post(api::admin::accounts::enable_account))
+        // .route("/admin/accounts/{account_id}/change-passwd", axum::routing::post(api::admin::accounts::))        // Apply middleware to inject DB connection for Basic Auth
+        .layer(axum::middleware::from_fn_with_state(
+            db.clone(),
+            auth::inject_db_middleware,
+        ));
+
+    let api_routes = Router::new()
+        .merge(public_routes)
+        .merge(protected_routes);
 
     let app = Router::new().nest("/api", api_routes).with_state(db);
 
