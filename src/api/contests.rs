@@ -25,18 +25,22 @@
 //! - Cannot set start time to past or within 30 seconds of current time
 //! - Thaw time modifications require appropriate contest state
 
+use std::ptr::null;
 use std::string;
 
 use crate::models::contest_group::Entity as ContestGroup;
 use crate::models::contest_language::Entity as ContestLanguage;
+use crate::models::contest_organization::Entity as ContestOrganization;
 use crate::models::contest_problem::Entity as ContestProblem;
+use crate::models::contest_team::Entity as ContestTeam;
 
 use crate::models::contests::{Entity as Contest, Model as ContestModel};
 use crate::models::groups::{Entity as Group, Model as GroupModel};
 use crate::models::judgements::{Entity as JudgementRes, Model as JudgementResModel};
 use crate::models::languages::{Entity as Language, Model as LanguageModel};
+use crate::models::organizations::{self, Entity as Organization, Model as OrganizationModel};
 use crate::models::problems::{self, Entity as Problem, Model as ProblemModel};
-use crate::models::team_group::Entity as TeamGroup;
+// use crate::models::team_group::Entity as TeamGroup;
 use crate::models::teams::{Entity as Team, Model as TeamModel};
 use crate::models::verdicts::{Entity as Judgement, Model as JudgementModel};
 use axum::{
@@ -437,41 +441,62 @@ impl From<TeamModel> for TeamResponse {
 pub async fn get_contest_teams(
     State(db): State<DatabaseConnection>,
     Path(contest_id): Path<String>,
-) -> Result<Json<Vec<TeamResponse>>, StatusCode> {
-    // Fetch the contest to get the main_scoreboard_group_id
-    let contest = Contest::find_by_id(&contest_id)
+) -> Result<Json<Vec<TeamModel>>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
         .one(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    // If no main scoreboard group is set, return empty list
-    let group_id = match contest.main_scoreboard_group_id {
-        Some(id) => id,
-        None => return Ok(Json(vec![])),
-    };
-
-    // Find all teams in the main scoreboard group via team_group junction table
-    let team_ids: Vec<String> = TeamGroup::find()
-        .filter(crate::models::team_group::Column::GroupId.eq(&group_id))
+    let team_ids: Vec<String> = ContestTeam::find()
+        .filter(crate::models::contest_team::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter()
-        .map(|tg| tg.team_id)
+        .map(|cl| cl.team_id)
         .collect();
 
-    // Fetch the actual team records
-    let teams: Vec<TeamResponse> = Team::find()
+    // Fetch the actual problems records
+    let teams: Vec<TeamModel> = Team::find()
         .filter(crate::models::teams::Column::Id.is_in(team_ids))
         .all(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .into_iter()
-        .map(TeamResponse::from)
-        .collect();
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(teams))
+}
+
+///
+/// todo for documents
+pub async fn get_contest_team(
+    State(db): State<DatabaseConnection>,
+    Path((contest_id, team_id)): Path<(String, String)>,
+) -> Result<Json<TeamModel>, StatusCode> {
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let team_ids: Vec<String> = ContestTeam::find()
+        .filter(crate::models::contest_team::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.team_id)
+        .collect();
+    if !team_ids.contains(&team_id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let team = Team::find_by_id(team_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(team))
 }
 
 /// Retrieves all judgement types for a contest.
@@ -785,6 +810,74 @@ pub async fn get_contest_group(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     Ok(Json(group))
+}
+
+/// Retrieves all groups for a contest.
+/// todo for documents
+pub async fn get_contest_organizations(
+    State(db): State<DatabaseConnection>,
+    Path(contest_id): Path<String>,
+) -> Result<Json<Vec<OrganizationModel>>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let organization_ids: Vec<String> = ContestOrganization::find()
+        .filter(crate::models::contest_organization::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.organization_id)
+        .collect();
+
+    // Fetch the actual problems records
+    let organizations: Vec<OrganizationModel> = Organization::find()
+        .filter(crate::models::organizations::Column::Id.is_in(organization_ids))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(organizations))
+}
+
+/// Retrieves all groups for a contest.
+/// todo for documents
+pub async fn get_contest_organization(
+    State(db): State<DatabaseConnection>,
+    Path((contest_id, organization_id)): Path<(String, String)>,
+) -> Result<Json<OrganizationModel>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let organization_ids: Vec<String> = ContestOrganization::find()
+        .filter(crate::models::contest_organization::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.organization_id)
+        .collect();
+
+    if !organization_ids.contains(&organization_id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Fetch the actual problems records
+    let organization: OrganizationModel = Organization::find_by_id(&organization_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(organization))
 }
 
 #[cfg(test)]

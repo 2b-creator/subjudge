@@ -1,7 +1,6 @@
 // src/models/mod.rs
 pub mod groups;
 pub mod organizations;
-// pub mod submission;
 pub mod teams;
 pub mod team_group;
 pub mod access;
@@ -16,6 +15,8 @@ pub mod contest_judgement;
 pub mod contest_language;
 pub mod contest_problem;
 pub mod contest_group;
+pub mod contest_organization;
+pub mod contest_team;
 
 use sea_orm::ActiveModelTrait;
 use serde_json::Value;
