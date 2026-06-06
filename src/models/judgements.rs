@@ -23,11 +23,11 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::submissions::Entity",
-        from = "Column::SubmissionId",
-        to = "super::submissions::Column::Id"
+        belongs_to = "super::verdicts::Entity",
+        from = "Column::JudgementTypeId",
+        to = "super::verdicts::Column::Id"
     )]
-    Submission,
+    Verdicts,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

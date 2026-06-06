@@ -25,18 +25,35 @@
 //! - Cannot set start time to past or within 30 seconds of current time
 //! - Thaw time modifications require appropriate contest state
 
+use std::string;
+
+use crate::models::contest_group::Entity as ContestGroup;
+use crate::models::contest_language::Entity as ContestLanguage;
+use crate::models::contest_problem::Entity as ContestProblem;
+
 use crate::models::contests::{Entity as Contest, Model as ContestModel};
+use crate::models::groups::{Entity as Group, Model as GroupModel};
+use crate::models::judgements::{Entity as JudgementRes, Model as JudgementResModel};
+use crate::models::languages::{Entity as Language, Model as LanguageModel};
+use crate::models::problems::{self, Entity as Problem, Model as ProblemModel};
+use crate::models::team_group::Entity as TeamGroup;
 use crate::models::teams::{Entity as Team, Model as TeamModel};
-use crate::models::team_group::{Entity as TeamGroup};
-use crate::models::judgements::{Entity as Judgement, Model as JudgementModel};
+use crate::models::verdicts::{Entity as Judgement, Model as JudgementModel};
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    Json,
 };
 use chrono::NaiveDateTime;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
+
+/// Error response body.
+#[derive(Debug, Serialize)]
+pub struct ErrorResponse {
+    /// Error message.
+    pub error: String,
+}
 
 /// Retrieves detailed information about a specific contest.
 ///
@@ -85,7 +102,9 @@ pub async fn get_contest(
     match contest {
         Some(contest) => {
             // Validate the contest model before returning
-            contest.validate().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            contest
+                .validate()
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             Ok(Json(contest))
         }
         None => Err(StatusCode::NOT_FOUND),
@@ -243,8 +262,8 @@ async fn patch_contest_start(
     // TODO: Check that the client has the "contest_start" capability
 
     // Parse the request payload
-    let request: PatchContestStartRequest = serde_json::from_value(payload)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let request: PatchContestStartRequest =
+        serde_json::from_value(payload).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // Verify the contest ID matches
     if request.id != contest_id {
@@ -331,8 +350,8 @@ async fn patch_contest_thaw(
     // TODO: Check that the client has the "contest_thaw" capability
 
     // Parse the request payload
-    let request: PatchContestThawRequest = serde_json::from_value(payload)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let request: PatchContestThawRequest =
+        serde_json::from_value(payload).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // Verify the contest ID matches
     if request.id != contest_id {
@@ -501,7 +520,7 @@ pub async fn get_contest_judgement_types(
     Path(contest_id): Path<String>,
 ) -> Result<Json<Vec<JudgementModel>>, StatusCode> {
     // Verify the contest exists
-    Contest::find_by_id(&contest_id)
+    let contest = Contest::find_by_id(&contest_id)
         .one(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -570,6 +589,203 @@ pub async fn get_contest_judgement_type(
     Ok(Json(judgement))
 }
 
+/// Retrieves all the languages for a contest.
+/// todo for documents
+pub async fn get_contest_languages(
+    State(db): State<DatabaseConnection>,
+    Path(contest_id): Path<String>,
+) -> Result<Json<Vec<LanguageModel>>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Find languages associated with this contest through contest_language
+    let language_ids: Vec<String> = ContestLanguage::find()
+        .filter(crate::models::contest_language::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.language_id)
+        .collect();
+
+    // Fetch the actual language records
+    let languages = Language::find()
+        .filter(crate::models::languages::Column::Id.is_in(language_ids))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(languages))
+}
+
+/// Retrieves a languages for a contest.
+/// todo for documents
+pub async fn get_contest_language(
+    State(db): State<DatabaseConnection>,
+    Path((contest_id, language_id)): Path<(String, String)>,
+) -> Result<Json<LanguageModel>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let language_ids: Vec<String> = ContestLanguage::find()
+        .filter(crate::models::contest_language::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.language_id)
+        .collect();
+
+    if !language_ids.contains(&language_id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let lang = Language::find_by_id(language_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(lang))
+}
+
+/// Retrieves all problems for a contest.
+/// todo for documents
+pub async fn get_contest_problems(
+    State(db): State<DatabaseConnection>,
+    Path(contest_id): Path<String>,
+) -> Result<Json<Vec<ProblemModel>>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let problem_ids: Vec<String> = ContestProblem::find()
+        .filter(crate::models::contest_problem::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.problem_id)
+        .collect();
+
+    // Fetch the actual problems records
+    let problems: Vec<ProblemModel> = Problem::find()
+        .filter(crate::models::problems::Column::Id.is_in(problem_ids))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(problems))
+}
+
+/// Retrieves a problem for a contest.
+/// todo for documents
+pub async fn get_contest_problem(
+    State(db): State<DatabaseConnection>,
+    Path((contest_id, problem_id)): Path<(String, String)>,
+) -> Result<Json<ProblemModel>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let problem_ids: Vec<String> = ContestProblem::find()
+        .filter(crate::models::contest_problem::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.problem_id)
+        .collect();
+
+    if !problem_ids.contains(&problem_id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let problem = Problem::find_by_id(problem_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(problem))
+}
+
+/// Retrieves all groups for a contest.
+/// todo for documents
+pub async fn get_contest_groups(
+    State(db): State<DatabaseConnection>,
+    Path(contest_id): Path<String>,
+) -> Result<Json<Vec<GroupModel>>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let group_ids: Vec<String> = ContestGroup::find()
+        .filter(crate::models::contest_group::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.group_id)
+        .collect();
+
+    // Fetch the actual problems records
+    let groups: Vec<GroupModel> = Group::find()
+        .filter(crate::models::groups::Column::Id.is_in(group_ids))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(groups))
+}
+
+///
+/// todo for documents
+pub async fn get_contest_group(
+    State(db): State<DatabaseConnection>,
+    Path((contest_id, group_id)): Path<(String, String)>,
+) -> Result<Json<GroupModel>, StatusCode> {
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let group_ids: Vec<String> = ContestGroup::find()
+        .filter(crate::models::contest_group::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.group_id)
+        .collect();
+    if !group_ids.contains(&group_id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let group = Group::find_by_id(group_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(group))
+}
 
 #[cfg(test)]
 mod tests {

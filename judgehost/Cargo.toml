@@ -1,0 +1,45 @@
+[package]
+name = "judgehost"
+version = "0.1.0"
+edition = "2021"
+
+# 核心依赖
+[dependencies]
+# 异步运行时
+tokio = { version = "1.36", features = ["full"] }
+redis = { version = "0.25", features = ["tokio-comp"] }
+# 序列化与反序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# 网络请求 (用于与 Subjudge API 通信)
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+
+# 错误处理
+anyhow = "1.0"
+
+# 并发与状态管理
+dashmap = "5.5" # 用于在多线程中管理正在运行的任务状态
+
+# 日志监控
+# tracing = "0.1"
+# tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 配置管理
+config = "0.14"
+
+# 处理时间与系统资源
+chrono = "0.4"
+
+# 如果你需要解析命令行参数
+clap = { version = "4.4", features = ["derive"] }
+
+# 嵌入式数据库 (可选，如果 judgehost 需要在断网时缓存任务)
+# sled = "0.34"
+
+[profile.release]
+# 优化判题程序的编译速度与执行效率
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -6,7 +6,7 @@ use crate::models::Syncable;
 #[derive(Clone, Debug, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "submissions")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(primary_key)]
     pub id: String, // ID
     pub language_id: String,
     pub problem_id: String,

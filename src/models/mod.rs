@@ -11,6 +11,11 @@ pub mod languages;
 pub mod problems;
 pub mod accounts;
 pub mod submissions;
+pub mod verdicts;
+pub mod contest_judgement;
+pub mod contest_language;
+pub mod contest_problem;
+pub mod contest_group;
 
 use sea_orm::ActiveModelTrait;
 use serde_json::Value;

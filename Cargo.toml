@@ -19,3 +19,4 @@ anyhow = "1.0"
 # 认证
 jsonwebtoken = "9.3"
 bcrypt = "0.15"
+log4rs = "1.4.0"

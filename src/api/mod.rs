@@ -17,6 +17,7 @@
 
 pub mod access;
 pub mod admin;
+pub mod team;
 pub mod auth;
 pub mod contests;
 pub mod sync;

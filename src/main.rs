@@ -22,7 +22,7 @@ async fn main() {
 
     // Protected routes that require authentication (HTTP Basic Auth or Bearer token)
     let protected_routes = Router::new()
-        .route("/submissions", get(|| async { "List submissions" }))
+        // .route("/submissions", get(|| async { "List submissions" }))
         .route("/auth/me", get(api::auth::get_current_user))
         // Contest endpoints
         .route("/contests/{id}", get(api::contests::get_contest))
@@ -34,15 +34,23 @@ async fn main() {
         .route("/contests/{id}/teams", get(api::contests::get_contest_teams))
         .route("/contests/{id}/judgement-types", get(api::contests::get_contest_judgement_types))
         .route("/contests/{id}/judgement-types/{judgement_type_id}", get(api::contests::get_contest_judgement_type))
+        .route("/contests/{id}/languages/", get(api::contests::get_contest_languages))
+        .route("/contests/{id}/languages/{language_id}", get(api::contests::get_contest_language))
+        .route("/contests/{id}/problems/", get(api::contests::get_contest_problems))
+        .route("/contests/{id}/problems/{problem_id}", get(api::contests::get_contest_problem))
+        .route("/contests/{id}/groups/", get(api::contests::get_contest_groups))
+        .route("/contests/{id}/groups/{group_id}", get(api::contests::get_contest_group))
+        
+        
         // Data synchronization endpoints
-        .route("/sync/teams", axum::routing::post(api::sync::sync_teams))
-        .route("/sync/groups", axum::routing::post(api::sync::sync_groups))
+        .route("/admin/sync/teams", axum::routing::post(api::sync::sync_teams))
+        .route("/admin/sync/groups", axum::routing::post(api::sync::sync_groups))
         .route(
-            "/sync/contests",
+            "/admin/sync/contests",
             axum::routing::post(api::sync::sync_contests),
         )
         .route(
-            "/sync/organizations",
+            "/admin/sync/organizations",
             axum::routing::post(api::sync::sync_organizations),
         )
         // Admin endpoints for account management
