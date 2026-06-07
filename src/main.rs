@@ -95,6 +95,14 @@ async fn main() {
             "/contests/{id}/judgements/{judgement_id}",
             get(api::contests::get_contest_judgement),
         )
+        .route(
+            "/contests/{id}/runs",
+            get(api::contests::get_contest_runs),
+        )
+        .route(
+            "/contests/{id}/runs/{run_id}",
+            get(api::contests::get_contest_run),
+        )
         // Data synchronization endpoints
         .route(
             "/admin/sync/teams",

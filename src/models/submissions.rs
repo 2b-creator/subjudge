@@ -6,7 +6,7 @@ use crate::models::Syncable;
 #[derive(Clone, Debug, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "submissions")]
 pub struct Model {
-    #[sea_orm(primary_key)]
+    #[sea_orm(primary_key, auto_increment = true)]
     pub id: String, // ID
     pub language_id: String,
     pub problem_id: String,
@@ -16,7 +16,7 @@ pub struct Model {
     pub contest_time: String, // Real time.
     pub entry_point: Option<String>,
     pub file: Json,
-    pub reaction: Option<Json> // Reaction video from team's webcam. Only allowed mime types are video/* or application/vnd.apple.mpegurl.
+    pub reaction: Option<Json>, // Reaction video from team's webcam. Only allowed mime types are video/* or application/vnd.apple.mpegurl.
 }
 
 

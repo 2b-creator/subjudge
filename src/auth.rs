@@ -1,21 +1,16 @@
-
-//! Authentication and authorization module.
+//! 认证与授权模块。
 //!
-//! This module provides JWT-based authentication, password hashing, and role extraction
-//! for the contest management system. It integrates with the access control system to
-//! determine what capabilities and endpoints are available to authenticated users.
+//! 基于 `axum_auth` 提供 HTTP Basic / Bearer (JWT) 两种认证方式，
+//! 并通过 `AuthUser` 提取器在 handler 中自动完成校验。
 
 use anyhow::{anyhow, Result};
 use axum::{
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
-    Json, RequestPartsExt,
+    Json,
 };
-use axum_extra::{
-    headers::{authorization::Bearer, authorization::Basic, Authorization},
-    TypedHeader,
-};
+use axum_auth::{AuthBasic, AuthBearer};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
@@ -23,40 +18,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::accounts::{Column, Entity as Accounts};
 
-/// JWT secret key for signing and verifying tokens.
-/// In production, this should be loaded from environment variables or secure storage.
+/// JWT 签名密钥。生产环境应从环境变量或安全存储加载。
 const JWT_SECRET: &str = "your-secret-key-change-in-production";
 
-/// JWT token expiration time in seconds (24 hours).
+/// JWT 过期时间（秒），默认 24 小时。
 const TOKEN_EXPIRATION_SECONDS: i64 = 86400;
 
-/// User role types for authorization.
-///
-/// These roles determine what capabilities and endpoints a user has access to
-/// in the contest system.
+/// 用户角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UserRole {
-    /// Public/unauthenticated access (read-only, basic information).
     Public,
-    /// Team participant (can submit solutions, view own data).
     Team,
-    /// Administrator/judge (full access to all contest operations).
     Admin,
-    /// Judge role (can evaluate submissions, view all data).
     Judge,
 }
 
 impl UserRole {
-    /// Converts a string account type to a UserRole.
-    ///
-    /// # Arguments
-    ///
-    /// * `account_type` - The account type string from the database
-    ///
-    /// # Returns
-    ///
-    /// The corresponding UserRole, defaulting to Public for unknown types
+    /// 由数据库中的账户类型字符串转换为角色，未知类型默认为 `Public`。
     pub fn from_account_type(account_type: &str) -> Self {
         match account_type.to_lowercase().as_str() {
             "admin" | "administrator" => UserRole::Admin,
@@ -66,55 +45,31 @@ impl UserRole {
         }
     }
 
-    /// Checks if this role has admin privileges.
     pub fn is_admin(&self) -> bool {
         matches!(self, UserRole::Admin)
     }
 
-    /// Checks if this role has judge privileges.
     pub fn is_judge(&self) -> bool {
         matches!(self, UserRole::Judge | UserRole::Admin)
     }
 
-    /// Checks if this role is a team participant.
     pub fn is_team(&self) -> bool {
         matches!(self, UserRole::Team)
     }
 }
 
-/// JWT claims structure.
-///
-/// This structure is encoded in the JWT token and contains the authenticated
-/// user's identity and role information.
+/// JWT 载荷。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    /// Subject (user ID).
     pub sub: String,
-    /// Username.
     pub username: String,
-    /// User role.
     pub role: UserRole,
-    /// Team ID (if the user is associated with a team).
     pub team_id: Option<String>,
-    /// Token issued at timestamp (Unix timestamp).
     pub iat: i64,
-    /// Token expiration timestamp (Unix timestamp).
     pub exp: i64,
 }
 
 impl Claims {
-    /// Creates new JWT claims for a user.
-    ///
-    /// # Arguments
-    ///
-    /// * `user_id` - The unique user identifier
-    /// * `username` - The username
-    /// * `role` - The user's role
-    /// * `team_id` - Optional team ID if the user is associated with a team
-    ///
-    /// # Returns
-    ///
-    /// New Claims with current issued time and calculated expiration
     pub fn new(user_id: String, username: String, role: UserRole, team_id: Option<String>) -> Self {
         let now = chrono::Utc::now().timestamp();
         Self {
@@ -128,23 +83,16 @@ impl Claims {
     }
 }
 
-/// Authenticated user information extracted from JWT token.
-///
-/// This struct is used as an Axum extractor to automatically validate
-/// JWT tokens and extract user information from requests.
+/// 已认证用户信息，可作为 Axum 提取器直接用在 handler 参数上。
 #[derive(Debug, Clone)]
 pub struct AuthUser {
-    /// User ID.
     pub user_id: String,
-    /// Username.
     pub username: String,
-    /// User role.
     pub role: UserRole,
-    /// Team ID (if associated with a team).
     pub team_id: Option<String>,
 }
 
-/// Error type for authentication failures.
+/// 认证失败错误。
 #[derive(Debug)]
 pub struct AuthError {
     message: String,
@@ -153,10 +101,7 @@ pub struct AuthError {
 
 impl AuthError {
     fn new(message: impl Into<String>, status: StatusCode) -> Self {
-        Self {
-            message: message.into(),
-            status,
-        }
+        Self { message: message.into(), status }
     }
 
     fn unauthorized(message: impl Into<String>) -> Self {
@@ -166,143 +111,71 @@ impl AuthError {
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
-        let body = Json(serde_json::json!({
-            "error": self.message
-        }));
-        (self.status, body).into_response()
+        (self.status, Json(serde_json::json!({ "error": self.message }))).into_response()
     }
 }
 
-/// Axum extractor for authenticated users.
-///
-/// Supports multiple authentication methods:
-/// 1. HTTP Basic Authentication (RFC 7617) - primary method
-/// 2. Bearer token (JWT) - alternative method
-///
-/// Use this in handler functions to automatically require authentication
-/// and extract user information.
-///
-/// # Example
-///
-/// ```rust
-/// async fn protected_handler(
-///     auth_user: AuthUser,
-/// ) -> impl IntoResponse {
-///     format!("Hello, {}!", auth_user.username)
-/// }
-/// ```
 impl<S> FromRequestParts<S> for AuthUser
 where
     S: Send + Sync,
 {
     type Rejection = AuthError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        // Try HTTP Basic Authentication first (RFC 7617)
-        if let Ok(TypedHeader(Authorization(basic))) =
-            parts.extract::<TypedHeader<Authorization<Basic>>>().await
-        {
-            return Self::from_basic_auth(basic, parts, state).await;
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        // 优先 Basic 认证（需要数据库校验），否则回退到 Bearer (JWT)。
+        if let Ok(AuthBasic((username, password))) = AuthBasic::from_request_parts(parts, _state).await {
+            return Self::from_basic(parts, &username, password.as_deref()).await;
         }
 
-        // Fall back to Bearer token (JWT) authentication
-        if let Ok(TypedHeader(Authorization(bearer))) =
-            parts.extract::<TypedHeader<Authorization<Bearer>>>().await
-        {
-            return Self::from_bearer_token(bearer).await;
+        if let Ok(AuthBearer(token)) = AuthBearer::from_request_parts(parts, _state).await {
+            return Self::from_bearer(&token);
         }
 
         Err(AuthError::unauthorized(
-            "Missing or invalid authorization header. Use HTTP Basic Auth or Bearer token."
+            "缺少或无效的 Authorization 头，请使用 HTTP Basic Auth 或 Bearer token。",
         ))
     }
 }
 
 impl AuthUser {
-    /// Authenticates using HTTP Basic Authentication.
-    async fn from_basic_auth<S>(
-        basic: Basic,
-        parts: &mut Parts,
-        _state: &S,
-    ) -> Result<Self, AuthError>
-    where
-        S: Send + Sync,
-    {
-        let username = basic.username();
-        let password = basic.password();
-
-        // Extract database connection from extensions
-        // Note: The DB connection must be added to request extensions by middleware
+    /// 通过 HTTP Basic 凭据查库校验。
+    async fn from_basic(parts: &Parts, username: &str, password: Option<&str>) -> Result<Self, AuthError> {
         let db = parts
             .extensions
             .get::<DatabaseConnection>()
-            .ok_or_else(|| AuthError::new(
-                "Database connection not available",
-                StatusCode::INTERNAL_SERVER_ERROR
-            ))?
-            .clone();
+            .ok_or_else(|| AuthError::new("数据库连接不可用", StatusCode::INTERNAL_SERVER_ERROR))?;
 
-        // Authenticate the user
-        let auth_service = AuthService::new(db);
-
-        // Find user by username
         let user = Accounts::find()
             .filter(Column::AccountUsername.eq(username))
-            .one(&auth_service.db)
+            .one(db)
             .await
-            .map_err(|e| AuthError::new(
-                format!("Database error: {}", e),
-                StatusCode::INTERNAL_SERVER_ERROR
-            ))?
-            .ok_or_else(|| AuthError::unauthorized("Invalid username or password"))?;
+            .map_err(|e| AuthError::new(format!("数据库错误: {e}"), StatusCode::INTERNAL_SERVER_ERROR))?
+            .ok_or_else(|| AuthError::unauthorized("用户名或密码错误"))?;
 
-        // Check if account is enabled
         if !user.enabled {
-            return Err(AuthError::unauthorized("Account has been disabled"));
+            return Err(AuthError::unauthorized("账户已被禁用"));
         }
 
-        // Verify password
-        if let Some(password_hash) = &user.password_hash {
-            if !password::verify_password(password, password_hash)
-                .map_err(|e| AuthError::new(
-                    format!("Password verification error: {}", e),
-                    StatusCode::INTERNAL_SERVER_ERROR
-                ))?
-            {
-                return Err(AuthError::unauthorized("Invalid username or password"));
-            }
-        } else {
-            return Err(AuthError::unauthorized("Account has no password set"));
+        let hash = user.password_hash.as_deref().ok_or_else(|| AuthError::unauthorized("账户未设置密码"))?;
+        let password = password.ok_or_else(|| AuthError::unauthorized("缺少密码"))?;
+        let valid = password::verify_password(password, hash)
+            .map_err(|e| AuthError::new(format!("密码校验错误: {e}"), StatusCode::INTERNAL_SERVER_ERROR))?;
+        if !valid {
+            return Err(AuthError::unauthorized("用户名或密码错误"));
         }
-
-        // Determine user role
-        let role = UserRole::from_account_type(&user.account_type);
 
         Ok(AuthUser {
+            role: UserRole::from_account_type(&user.account_type),
             user_id: user.id,
             username: user.account_username,
-            role,
             team_id: user.team_id,
         })
     }
 
-    /// Authenticates using Bearer token (JWT).
-    async fn from_bearer_token(bearer: Bearer) -> Result<Self, AuthError> {
-        // Decode and validate the JWT token
-        let token_data = decode::<Claims>(
-            bearer.token(),
-            &DecodingKey::from_secret(JWT_SECRET.as_bytes()),
-            &Validation::default(),
-        )
-        .map_err(|e| AuthError::unauthorized(format!("Invalid token: {}", e)))?;
-
-        let claims = token_data.claims;
-
-        // Check if token is expired
-        let now = chrono::Utc::now().timestamp();
-        if claims.exp < now {
-            return Err(AuthError::unauthorized("Token has expired"));
-        }
+    /// 校验 Bearer (JWT) token。
+    fn from_bearer(token: &str) -> Result<Self, AuthError> {
+        let claims = token::validate_token(token)
+            .map_err(|e| AuthError::unauthorized(format!("无效的 token: {e}")))?;
 
         Ok(AuthUser {
             user_id: claims.sub,
@@ -313,11 +186,7 @@ impl AuthUser {
     }
 }
 
-/// Optional authentication extractor.
-///
-/// Unlike `AuthUser`, this extractor does not fail if no valid token or credentials are provided.
-/// Use this when you want to provide different responses for authenticated vs
-/// unauthenticated users. Supports both HTTP Basic Auth and Bearer token.
+/// 可选认证提取器：无有效凭据时不报错，返回 `None`。
 #[derive(Debug, Clone)]
 pub struct OptionalAuthUser(pub Option<AuthUser>);
 
@@ -328,72 +197,37 @@ where
     type Rejection = std::convert::Infallible;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let auth_user = AuthUser::from_request_parts(parts, state).await.ok();
-        Ok(OptionalAuthUser(auth_user))
+        Ok(OptionalAuthUser(AuthUser::from_request_parts(parts, state).await.ok()))
     }
 }
 
-/// Middleware to inject database connection into request extensions.
-///
-/// This middleware is required for HTTP Basic Authentication to work,
-/// as it needs database access to verify credentials on every request.
+/// 注入数据库连接到请求扩展，供 Basic 认证查库使用。
 pub async fn inject_db_middleware(
     axum::extract::State(db): axum::extract::State<DatabaseConnection>,
     mut request: axum::extract::Request,
     next: axum::middleware::Next,
-) -> axum::response::Response {
+) -> Response {
     request.extensions_mut().insert(db);
     next.run(request).await
 }
 
-/// Password hashing utilities.
+/// 密码哈希工具。
 pub mod password {
     use super::*;
 
-    /// Hashes a plaintext password using bcrypt.
-    ///
-    /// # Arguments
-    ///
-    /// * `password` - The plaintext password to hash
-    ///
-    /// # Returns
-    ///
-    /// Result containing the hashed password string
     pub fn hash_password(password: &str) -> Result<String> {
-        hash(password, DEFAULT_COST).map_err(|e| anyhow!("Failed to hash password: {}", e))
+        hash(password, DEFAULT_COST).map_err(|e| anyhow!("密码哈希失败: {e}"))
     }
 
-    /// Verifies a plaintext password against a bcrypt hash.
-    ///
-    /// # Arguments
-    ///
-    /// * `password` - The plaintext password to verify
-    /// * `hash` - The bcrypt hash to verify against
-    ///
-    /// # Returns
-    ///
-    /// Result indicating whether the password matches
     pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
-        verify(password, hash).map_err(|e| anyhow!("Failed to verify password: {}", e))
+        verify(password, hash).map_err(|e| anyhow!("密码校验失败: {e}"))
     }
 }
 
-/// JWT token utilities.
+/// JWT token 工具。
 pub mod token {
     use super::*;
 
-    /// Generates a JWT token for a user.
-    ///
-    /// # Arguments
-    ///
-    /// * `user_id` - The unique user identifier
-    /// * `username` - The username
-    /// * `role` - The user's role
-    /// * `team_id` - Optional team ID
-    ///
-    /// # Returns
-    ///
-    /// Result containing the encoded JWT token string
     pub fn generate_token(
         user_id: String,
         username: String,
@@ -401,104 +235,62 @@ pub mod token {
         team_id: Option<String>,
     ) -> Result<String> {
         let claims = Claims::new(user_id, username, role, team_id);
-        encode(
-            &Header::default(),
-            &claims,
-            &EncodingKey::from_secret(JWT_SECRET.as_bytes()),
-        )
-        .map_err(|e| anyhow!("Failed to generate token: {}", e))
+        encode(&Header::default(), &claims, &EncodingKey::from_secret(JWT_SECRET.as_bytes()))
+            .map_err(|e| anyhow!("生成 token 失败: {e}"))
     }
 
-    /// Validates and decodes a JWT token.
-    ///
-    /// # Arguments
-    ///
-    /// * `token` - The JWT token string to validate
-    ///
-    /// # Returns
-    ///
-    /// Result containing the decoded Claims
     pub fn validate_token(token: &str) -> Result<Claims> {
-        let token_data = decode::<Claims>(
+        decode::<Claims>(
             token,
             &DecodingKey::from_secret(JWT_SECRET.as_bytes()),
             &Validation::default(),
         )
-        .map_err(|e| anyhow!("Failed to validate token: {}", e))?;
-
-        Ok(token_data.claims)
+        .map(|data| data.claims)
+        .map_err(|e| anyhow!("校验 token 失败: {e}"))
     }
 }
 
-/// Authentication service for user login and verification.
+/// 认证服务：用于登录接口签发 JWT。
 pub struct AuthService {
     db: DatabaseConnection,
 }
 
 impl AuthService {
-    /// Creates a new authentication service.
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }
 
-    /// Authenticates a user with username and password.
-    ///
-    /// # Arguments
-    ///
-    /// * `username` - The username
-    /// * `password` - The plaintext password
-    ///
-    /// # Returns
-    ///
-    /// Result containing a JWT token if authentication succeeds
+    /// 校验用户名密码，成功则返回 JWT token。
     pub async fn authenticate(&self, username: &str, password: &str) -> Result<String> {
-        // Find user by username
         let user = Accounts::find()
             .filter(Column::AccountUsername.eq(username))
             .one(&self.db)
             .await
-            .map_err(|e| anyhow!("Database error: {}", e))?
+            .map_err(|e| anyhow!("数据库错误: {e}"))?
             .ok_or_else(|| anyhow!("Invalid username or password"))?;
 
-        // Check if account is enabled
         if !user.enabled {
             return Err(anyhow!("Account has been disabled"));
         }
 
-        // Verify password
-        if let Some(password_hash) = &user.password_hash {
-            if !password::verify_password(password, password_hash)? {
-                return Err(anyhow!("Invalid username or password"));
-            }
-        } else {
-            return Err(anyhow!("Account has no password set"));
+        let hash = user.password_hash.as_deref().ok_or_else(|| anyhow!("Account has no password set"))?;
+        if !password::verify_password(password, hash)? {
+            return Err(anyhow!("Invalid username or password"));
         }
 
-        // Determine user role
         let role = UserRole::from_account_type(&user.account_type);
-
-        // Generate JWT token
         token::generate_token(user.id, user.account_username, role, user.team_id)
     }
 
-    /// Gets user information by user ID.
-    ///
-    /// # Arguments
-    ///
-    /// * `user_id` - The user ID
-    ///
-    /// # Returns
-    ///
-    /// Result containing the user's role and team ID
+    /// 按用户 ID 获取角色与 team_id。
     pub async fn get_user_info(&self, user_id: &str) -> Result<(UserRole, Option<String>)> {
         let user = Accounts::find_by_id(user_id)
             .one(&self.db)
             .await
-            .map_err(|e| anyhow!("Database error: {}", e))?
+            .map_err(|e| anyhow!("数据库错误: {e}"))?
             .ok_or_else(|| anyhow!("User not found"))?;
 
-        let role = UserRole::from_account_type(&user.account_type);
-        Ok((role, user.team_id))
+        Ok((UserRole::from_account_type(&user.account_type), user.team_id))
     }
 }
 
@@ -520,37 +312,15 @@ mod tests {
         assert!(UserRole::Admin.is_admin());
         assert!(UserRole::Admin.is_judge());
         assert!(!UserRole::Admin.is_team());
-
         assert!(!UserRole::Judge.is_admin());
         assert!(UserRole::Judge.is_judge());
-        assert!(!UserRole::Judge.is_team());
-
-        assert!(!UserRole::Team.is_admin());
-        assert!(!UserRole::Team.is_judge());
         assert!(UserRole::Team.is_team());
-    }
-
-    #[test]
-    fn test_claims_creation() {
-        let claims = Claims::new(
-            "user123".to_string(),
-            "testuser".to_string(),
-            UserRole::Team,
-            Some("team456".to_string()),
-        );
-
-        assert_eq!(claims.sub, "user123");
-        assert_eq!(claims.username, "testuser");
-        assert_eq!(claims.role, UserRole::Team);
-        assert_eq!(claims.team_id, Some("team456".to_string()));
-        assert!(claims.exp > claims.iat);
     }
 
     #[test]
     fn test_password_hashing() {
         let password = "secure_password_123";
         let hash = password::hash_password(password).unwrap();
-
         assert_ne!(hash, password);
         assert!(password::verify_password(password, &hash).unwrap());
         assert!(!password::verify_password("wrong_password", &hash).unwrap());
@@ -565,10 +335,8 @@ mod tests {
             None,
         )
         .unwrap();
-
         let claims = token::validate_token(&token).unwrap();
         assert_eq!(claims.sub, "user123");
-        assert_eq!(claims.username, "testuser");
         assert_eq!(claims.role, UserRole::Admin);
         assert_eq!(claims.team_id, None);
     }

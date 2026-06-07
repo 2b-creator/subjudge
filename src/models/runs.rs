@@ -4,24 +4,26 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "judgements")]
+#[sea_orm(table_name = "runs")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = true)]
     pub id: i32, // ID
-    pub submission_id: String,
-    pub judgement_type_id: Option<String>,
-    pub simplified_judgement_type_id: Option<String>,
-    pub score: f32,
-    pub current: Option<bool>,
-    pub start_time: String,         // Absolute time when judgement started.
-    pub start_contest_time: String, // Contest relative time when judgement started.
-    pub end_time: String,
-    pub end_contest_time: String,
-    pub max_run_time: Option<f32>,
+    pub judgement_id: String,
+    pub ordinal: i32,
+    pub judgement_type_id: String,
+    pub time: String,
+    pub contest_time: String,
+    pub run_time: f32, // Run time in seconds. Should be a non-negative integer multiple of 0.001. The reason for this is to not have rounding ambiguities while still using the natural unit of seconds.
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::judgements::Entity",
+        from = "Column::JudgementId",
+        to = "super::judgements::Column::Id"
+    )]
+    Judgements,
     #[sea_orm(
         belongs_to = "super::verdicts::Entity",
         from = "Column::JudgementTypeId",

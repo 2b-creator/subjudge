@@ -26,23 +26,25 @@
 //! - Thaw time modifications require appropriate contest state
 
 use crate::models::contest_group::Entity as ContestGroup;
+use crate::models::contest_judgement::Entity as ContestJudgement;
 use crate::models::contest_language::Entity as ContestLanguage;
 use crate::models::contest_organization::Entity as ContestOrganization;
 use crate::models::contest_problem::Entity as ContestProblem;
-use crate::models::contest_team::Entity as ContestTeam;
+use crate::models::contest_run::Entity as ContestRun;
 use crate::models::contest_submission::Entity as ContestSubmission;
-use crate::models::contest_judgement::Entity as ContestJudgement;
+use crate::models::contest_team::Entity as ContestTeam;
 
 use crate::models::contests::{Entity as Contest, Model as ContestModel};
 use crate::models::groups::{Entity as Group, Model as GroupModel};
 use crate::models::judgements::{Entity as JudgementRes, Model as JudgementResModel};
 use crate::models::languages::{Entity as Language, Model as LanguageModel};
-use crate::models::organizations::{ Entity as Organization, Model as OrganizationModel};
-use crate::models::problems::{ Entity as Problem, Model as ProblemModel};
+use crate::models::organizations::{Entity as Organization, Model as OrganizationModel};
+use crate::models::problems::{Entity as Problem, Model as ProblemModel};
 // use crate::models::team_group::Entity as TeamGroup;
+use crate::models::runs::{Entity as RunRes, Model as RunResModel};
+use crate::models::submissions::{Entity as Submission, Model as SubmissionModel};
 use crate::models::teams::{Entity as Team, Model as TeamModel};
 use crate::models::verdicts::{Entity as Judgement, Model as JudgementModel};
-use crate::models::submissions::{Entity as Submission, Model as SubmissionModel};
 use axum::{
     Json,
     extract::{Path, State},
@@ -879,7 +881,6 @@ pub async fn get_contest_organization(
     Ok(Json(organization))
 }
 
-
 /// Retrieves all submissions for a contest.
 /// todo for documents
 pub async fn get_contest_submissions(
@@ -948,7 +949,6 @@ pub async fn get_contest_submission(
     Ok(Json(submission))
 }
 
-
 /// Retrieves all submissions for a contest.
 /// todo for documents
 pub async fn get_contest_judgements(
@@ -985,7 +985,7 @@ pub async fn get_contest_judgements(
 /// todo for documents
 pub async fn get_contest_judgement(
     State(db): State<DatabaseConnection>,
-    Path((contest_id, judgement_id)): Path<(String, String)>,
+    Path((contest_id, judgement_id)): Path<(String, i32)>,
 ) -> Result<Json<JudgementResModel>, StatusCode> {
     // Verify the contest exists
     Contest::find_by_id(&contest_id)
@@ -1003,12 +1003,12 @@ pub async fn get_contest_judgement(
         .map(|cl| cl.judgement_id)
         .collect();
 
-    if !judgements_result_ids.contains(&judgement_id) {
+    if !judgements_result_ids.contains(&judgement_id.to_string()) {
         return Err(StatusCode::NOT_FOUND);
     }
 
     // Fetch the actual problems records
-    let judgement: JudgementResModel = JudgementRes::find_by_id(&judgement_id)
+    let judgement: JudgementResModel = JudgementRes::find_by_id(judgement_id)
         .one(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -1017,6 +1017,73 @@ pub async fn get_contest_judgement(
     Ok(Json(judgement))
 }
 
+/// todo for documents
+///
+pub async fn get_contest_runs(
+    State(db): State<DatabaseConnection>,
+    Path(contest_id): Path<String>,
+) -> Result<Json<Vec<RunResModel>>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let run_result_ids: Vec<String> = ContestRun::find()
+        .filter(crate::models::contest_run::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.run_id)
+        .collect();
+
+    // Fetch the actual problems records
+    let run_results: Vec<RunResModel> = RunRes::find()
+        .filter(crate::models::runs::Column::Id.is_in(run_result_ids))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(run_results))
+}
+
+/// Retrieves a submissions for a contest.
+/// todo for documents
+pub async fn get_contest_run(
+    State(db): State<DatabaseConnection>,
+    Path((contest_id, run_id)): Path<(String, i32)>,
+) -> Result<Json<RunResModel>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let run_result_ids: Vec<String> = ContestRun::find()
+        .filter(crate::models::contest_run::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.run_id)
+        .collect();
+
+    if !run_result_ids.contains(&run_id.to_string()) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Fetch the actual problems records
+    let runres: RunResModel = RunRes::find_by_id(run_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(runres))
+}
 #[cfg(test)]
 mod tests {
     use super::*;
