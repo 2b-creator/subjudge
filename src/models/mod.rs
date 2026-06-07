@@ -17,6 +17,7 @@ pub mod contest_problem;
 pub mod contest_group;
 pub mod contest_organization;
 pub mod contest_team;
+pub mod contest_submission;
 
 use sea_orm::ActiveModelTrait;
 use serde_json::Value;

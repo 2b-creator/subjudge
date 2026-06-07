@@ -25,24 +25,24 @@
 //! - Cannot set start time to past or within 30 seconds of current time
 //! - Thaw time modifications require appropriate contest state
 
-use std::ptr::null;
-use std::string;
-
 use crate::models::contest_group::Entity as ContestGroup;
 use crate::models::contest_language::Entity as ContestLanguage;
 use crate::models::contest_organization::Entity as ContestOrganization;
 use crate::models::contest_problem::Entity as ContestProblem;
 use crate::models::contest_team::Entity as ContestTeam;
+use crate::models::contest_submission::Entity as ContestSubmission;
+use crate::models::contest_judgement::Entity as ContestJudgement;
 
 use crate::models::contests::{Entity as Contest, Model as ContestModel};
 use crate::models::groups::{Entity as Group, Model as GroupModel};
 use crate::models::judgements::{Entity as JudgementRes, Model as JudgementResModel};
 use crate::models::languages::{Entity as Language, Model as LanguageModel};
-use crate::models::organizations::{self, Entity as Organization, Model as OrganizationModel};
-use crate::models::problems::{self, Entity as Problem, Model as ProblemModel};
+use crate::models::organizations::{ Entity as Organization, Model as OrganizationModel};
+use crate::models::problems::{ Entity as Problem, Model as ProblemModel};
 // use crate::models::team_group::Entity as TeamGroup;
 use crate::models::teams::{Entity as Team, Model as TeamModel};
 use crate::models::verdicts::{Entity as Judgement, Model as JudgementModel};
+use crate::models::submissions::{Entity as Submission, Model as SubmissionModel};
 use axum::{
     Json,
     extract::{Path, State},
@@ -52,12 +52,11 @@ use chrono::NaiveDateTime;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 
-/// Error response body.
-#[derive(Debug, Serialize)]
-pub struct ErrorResponse {
-    /// Error message.
-    pub error: String,
-}
+// #[derive(Debug, Serialize)]
+// pub struct ErrorResponse {
+//     /// Error message.
+//     pub error: String,
+// }
 
 /// Retrieves detailed information about a specific contest.
 ///
@@ -150,11 +149,11 @@ pub struct PatchContestThawRequest {
 ///
 /// Returned with HTTP 200 status when the requested thaw time was in the past
 /// and was automatically adjusted to the current time.
-#[derive(Debug, Serialize)]
-pub struct PatchContestThawResponse {
-    /// The contest with updated thaw time
-    pub contest: ContestModel,
-}
+// #[derive(Debug, Serialize)]
+// pub struct PatchContestThawResponse {
+//     /// The contest with updated thaw time
+//     pub contest: ContestModel,
+// }
 
 /// Modifies contest properties based on the provided payload.
 ///
@@ -545,7 +544,7 @@ pub async fn get_contest_judgement_types(
     Path(contest_id): Path<String>,
 ) -> Result<Json<Vec<JudgementModel>>, StatusCode> {
     // Verify the contest exists
-    let contest = Contest::find_by_id(&contest_id)
+    let _contest = Contest::find_by_id(&contest_id)
         .one(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -878,6 +877,144 @@ pub async fn get_contest_organization(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     Ok(Json(organization))
+}
+
+
+/// Retrieves all submissions for a contest.
+/// todo for documents
+pub async fn get_contest_submissions(
+    State(db): State<DatabaseConnection>,
+    Path(contest_id): Path<String>,
+) -> Result<Json<Vec<SubmissionModel>>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let submission_ids: Vec<String> = ContestSubmission::find()
+        .filter(crate::models::contest_submission::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.submission_id)
+        .collect();
+
+    // Fetch the actual problems records
+    let submissions: Vec<SubmissionModel> = Submission::find()
+        .filter(crate::models::submissions::Column::Id.is_in(submission_ids))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(submissions))
+}
+
+/// Retrieves a submissions for a contest.
+/// todo for documents
+pub async fn get_contest_submission(
+    State(db): State<DatabaseConnection>,
+    Path((contest_id, submission_id)): Path<(String, String)>,
+) -> Result<Json<SubmissionModel>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let submission_ids: Vec<String> = ContestSubmission::find()
+        .filter(crate::models::contest_submission::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.submission_id)
+        .collect();
+
+    if !submission_ids.contains(&submission_id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Fetch the actual problems records
+    let submission: SubmissionModel = Submission::find_by_id(&submission_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(submission))
+}
+
+
+/// Retrieves all submissions for a contest.
+/// todo for documents
+pub async fn get_contest_judgements(
+    State(db): State<DatabaseConnection>,
+    Path(contest_id): Path<String>,
+) -> Result<Json<Vec<JudgementResModel>>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let judgements_result_ids: Vec<String> = ContestJudgement::find()
+        .filter(crate::models::contest_judgement::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.judgement_id)
+        .collect();
+
+    // Fetch the actual problems records
+    let judgements_results: Vec<JudgementResModel> = JudgementRes::find()
+        .filter(crate::models::judgements::Column::Id.is_in(judgements_result_ids))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(judgements_results))
+}
+
+/// Retrieves a submissions for a contest.
+/// todo for documents
+pub async fn get_contest_judgement(
+    State(db): State<DatabaseConnection>,
+    Path((contest_id, judgement_id)): Path<(String, String)>,
+) -> Result<Json<JudgementResModel>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let judgements_result_ids: Vec<String> = ContestJudgement::find()
+        .filter(crate::models::contest_judgement::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.judgement_id)
+        .collect();
+
+    if !judgements_result_ids.contains(&judgement_id) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Fetch the actual problems records
+    let judgement: JudgementResModel = JudgementRes::find_by_id(&judgement_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(judgement))
 }
 
 #[cfg(test)]

@@ -77,7 +77,23 @@ async fn main() {
         )
         .route(
             "/contests/{id}/organizations/{organization_id}",
-            get(api::contests::get_contest_organization),
+            get(api::contests::get_contest_organization), 
+        )// todo for accounts api
+        .route(
+            "/contests/{id}/submissions",
+            get(api::contests::get_contest_submissions),
+        )
+        .route(
+            "/contests/{id}/submissions/{submission_id}",
+            get(api::contests::get_contest_submission),
+        )
+        .route(
+            "/contests/{id}/judgements",
+            get(api::contests::get_contest_judgements),
+        )
+        .route(
+            "/contests/{id}/judgements/{judgement_id}",
+            get(api::contests::get_contest_judgement),
         )
         // Data synchronization endpoints
         .route(
