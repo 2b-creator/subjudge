@@ -12,6 +12,7 @@ pub mod accounts;
 pub mod submissions;
 pub mod verdicts;
 pub mod runs;
+pub mod clarifications;
 
 pub mod contest_judgement;
 pub mod contest_language;
@@ -21,6 +22,8 @@ pub mod contest_organization;
 pub mod contest_team;
 pub mod contest_submission;
 pub mod contest_run;
+pub mod contest_clarification;
+
 
 
 use sea_orm::ActiveModelTrait;

@@ -33,6 +33,7 @@ use crate::models::contest_problem::Entity as ContestProblem;
 use crate::models::contest_run::Entity as ContestRun;
 use crate::models::contest_submission::Entity as ContestSubmission;
 use crate::models::contest_team::Entity as ContestTeam;
+use crate::models::contest_clarification::Entity as ContestClarification;
 
 use crate::models::contests::{Entity as Contest, Model as ContestModel};
 use crate::models::groups::{Entity as Group, Model as GroupModel};
@@ -40,6 +41,7 @@ use crate::models::judgements::{Entity as JudgementRes, Model as JudgementResMod
 use crate::models::languages::{Entity as Language, Model as LanguageModel};
 use crate::models::organizations::{Entity as Organization, Model as OrganizationModel};
 use crate::models::problems::{Entity as Problem, Model as ProblemModel};
+use crate::models::clarifications::{Entity as Clarification, Model as ClarificationModel};
 // use crate::models::team_group::Entity as TeamGroup;
 use crate::models::runs::{Entity as RunRes, Model as RunResModel};
 use crate::models::submissions::{Entity as Submission, Model as SubmissionModel};
@@ -1084,6 +1086,73 @@ pub async fn get_contest_run(
 
     Ok(Json(runres))
 }
+
+pub async fn get_contest_clarifications(
+    State(db): State<DatabaseConnection>,
+    Path(contest_id): Path<String>,
+) -> Result<Json<Vec<ClarificationModel>>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let clari_ids: Vec<String> = ContestClarification::find()
+        .filter(crate::models::contest_clarification::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.clarification_id)
+        .collect();
+
+    // Fetch the actual problems records
+    let clari: Vec<ClarificationModel> = Clarification::find()
+        .filter(crate::models::clarifications::Column::Id.is_in(clari_ids))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(clari))
+}
+
+/// Retrieves a submissions for a contest.
+/// todo for documents
+pub async fn get_contest_clarification(
+    State(db): State<DatabaseConnection>,
+    Path((contest_id, clair_id)): Path<(String, i32)>,
+) -> Result<Json<ClarificationModel>, StatusCode> {
+    // Verify the contest exists
+    Contest::find_by_id(&contest_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let clari_ids: Vec<String> = ContestClarification::find()
+        .filter(crate::models::contest_clarification::Column::ContestId.eq(&contest_id))
+        .all(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|cl| cl.clarification_id)
+        .collect();
+
+    if !clari_ids.contains(&clair_id.to_string()) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Fetch the actual problems records
+    let clari: ClarificationModel = Clarification::find_by_id(clair_id)
+        .one(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(clari))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
