@@ -42,7 +42,7 @@ pub struct ErrorResponse {
 pub async fn submit_solution(
     auth_user: AuthUser,
     State(db): State<DatabaseConnection>,
-    Path((contest_id, account_id)): Path<(String, String)>,
+    Path((contest_id, problem_id)): Path<(String, String)>,
     Json(payload): Json<SubmitInfoRequest>,
 ) -> Result<Json<SubmitInfoRespond>, (StatusCode, Json<ErrorResponse>)> {
     // Check if user is a team member
@@ -80,7 +80,7 @@ pub async fn submit_solution(
     let submission = SubmissionActiveModel {
         id: NotSet,  // Let database auto-generate the i32 ID
         language_id: Set(payload.language_id),
-        problem_id: Set(payload.problem_id),
+        problem_id: Set(problem_id),
         team_id: Set(payload.team_id),
         account_id: Set(Some(auth_user.user_id.clone())),
         time: Set(payload.time),

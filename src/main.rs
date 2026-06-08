@@ -22,7 +22,6 @@ async fn main() {
 
     // Protected routes that require authentication (HTTP Basic Auth or Bearer token)
     let protected_routes = Router::new()
-        // .route("/submissions", get(|| async { "List submissions" }))
         .route("/auth/me", get(api::auth::get_current_user))
         // Contest endpoints
         .route("/contests/{id}", get(api::contests::get_contest))
@@ -110,6 +109,11 @@ async fn main() {
         .route(
             "/contests/{id}/clarifications/{clarification_id}",
             get(api::contests::get_contest_clarification),
+        )
+        // team api
+        .route(
+            "/team/contest/{id}/submissions/{problem_id}",
+            get(api::team::submit::submit_solution),
         )
         // Data synchronization endpoints
         .route(
