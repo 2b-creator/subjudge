@@ -6,7 +6,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
-use sea_orm::{DatabaseConnection, EntityTrait, ActiveModelTrait, Set};
+use sea_orm::{DatabaseConnection, EntityTrait, ActiveModelTrait, Set, NotSet};
 use serde::{Deserialize, Serialize};
 use chrono::Utc;
 #[derive(Deserialize)]
@@ -76,20 +76,13 @@ pub async fn submit_solution(
             )
         })?;
 
-    // Generate unique submission ID using timestamp and nano precision
-    let submission_id = format!(
-        "{}-{}",
-        Utc::now().timestamp(),
-        Utc::now().timestamp_subsec_nanos()
-    );
-
     // Create submission active model
     let submission = SubmissionActiveModel {
-        id: Set(submission_id.clone()),
+        id: NotSet,  // Let database auto-generate the i32 ID
         language_id: Set(payload.language_id),
         problem_id: Set(payload.problem_id),
         team_id: Set(payload.team_id),
-        account_id: Set(payload.account_id),
+        account_id: Set(Some(auth_user.user_id.clone())),
         time: Set(payload.time),
         contest_time: Set(payload.contest_time),
         entry_point: Set(payload.entry_point),
@@ -97,8 +90,8 @@ pub async fn submit_solution(
         reaction: Set(payload.reaction),
     };
 
-    // Insert submission into database
-    submission.insert(&db).await.map_err(|e| {
+    // Insert submission into database and get the generated ID
+    let inserted = submission.insert(&db).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -107,8 +100,8 @@ pub async fn submit_solution(
         )
     })?;
 
-    // Generate submission URL
-    let submission_url = format!("/api/contests/{}/submissions/{}", contest_id, submission_id);
+    // Generate submission URL using the auto-generated ID
+    let submission_url = format!("/api/contests/{}/submissions/{}", contest_id, inserted.id);
 
     Ok(Json(SubmitInfoRespond {
         message: "Submission created successfully!".to_string(),

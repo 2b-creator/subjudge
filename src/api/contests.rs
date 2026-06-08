@@ -919,7 +919,7 @@ pub async fn get_contest_submissions(
 /// todo for documents
 pub async fn get_contest_submission(
     State(db): State<DatabaseConnection>,
-    Path((contest_id, submission_id)): Path<(String, String)>,
+    Path((contest_id, submission_id)): Path<(String, i32)>,
 ) -> Result<Json<SubmissionModel>, StatusCode> {
     // Verify the contest exists
     Contest::find_by_id(&contest_id)
@@ -937,12 +937,12 @@ pub async fn get_contest_submission(
         .map(|cl| cl.submission_id)
         .collect();
 
-    if !submission_ids.contains(&submission_id) {
+    if !submission_ids.contains(&submission_id.to_string()) {
         return Err(StatusCode::NOT_FOUND);
     }
 
     // Fetch the actual problems records
-    let submission: SubmissionModel = Submission::find_by_id(&submission_id)
+    let submission: SubmissionModel = Submission::find_by_id(submission_id)
         .one(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?

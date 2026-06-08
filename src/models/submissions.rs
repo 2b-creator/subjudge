@@ -7,7 +7,7 @@ use crate::models::Syncable;
 #[sea_orm(table_name = "submissions")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = true)]
-    pub id: String, // ID
+    pub id: i32, // ID
     pub language_id: String,
     pub problem_id: String,
     pub team_id: String,
