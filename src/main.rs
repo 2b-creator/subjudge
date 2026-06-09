@@ -3,7 +3,7 @@ mod auth;
 mod models;
 
 use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, patch, post};
 use sea_orm::Database;
 
 #[tokio::main]
@@ -76,8 +76,8 @@ async fn main() {
         )
         .route(
             "/contests/{id}/organizations/{organization_id}",
-            get(api::contests::get_contest_organization), 
-        )// todo for accounts api
+            get(api::contests::get_contest_organization),
+        ) // todo for accounts api
         .route(
             "/contests/{id}/submissions",
             get(api::contests::get_contest_submissions),
@@ -94,10 +94,7 @@ async fn main() {
             "/contests/{id}/judgements/{judgement_id}",
             get(api::contests::get_contest_judgement),
         )
-        .route(
-            "/contests/{id}/runs",
-            get(api::contests::get_contest_runs),
-        )
+        .route("/contests/{id}/runs", get(api::contests::get_contest_runs))
         .route(
             "/contests/{id}/runs/{run_id}",
             get(api::contests::get_contest_run),
@@ -112,25 +109,20 @@ async fn main() {
         )
         // team api
         .route(
-            "/team/contest/{id}/submissions/{problem_id}",
+            "/team/contest/{id}/submissions/",
             get(api::team::submit::submit_solution),
         )
+        .route(
+            "/team/contest/{id}/submissions/{problem_id}",
+            post(api::team::submit::submit_solution_id),
+        )
         // Data synchronization endpoints
-        .route(
-            "/admin/sync/teams",
-            axum::routing::post(api::sync::sync_teams),
-        )
-        .route(
-            "/admin/sync/groups",
-            axum::routing::post(api::sync::sync_groups),
-        )
-        .route(
-            "/admin/sync/contests",
-            axum::routing::post(api::sync::sync_contests),
-        )
+        .route("/admin/sync/teams", post(api::sync::sync_teams))
+        .route("/admin/sync/groups", post(api::sync::sync_groups))
+        .route("/admin/sync/contests", post(api::sync::sync_contests))
         .route(
             "/admin/sync/organizations",
-            axum::routing::post(api::sync::sync_organizations),
+            post(api::sync::sync_organizations),
         )
         // Admin endpoints for account management
         .route("/admin/accounts", get(api::admin::accounts::list_accounts))
@@ -140,15 +132,15 @@ async fn main() {
         )
         .route(
             "/admin/accounts/{account_id}/status",
-            axum::routing::patch(api::admin::accounts::update_account_status),
+            patch(api::admin::accounts::update_account_status),
         )
         .route(
             "/admin/accounts/{account_id}/disable",
-            axum::routing::post(api::admin::accounts::disable_account),
+            post(api::admin::accounts::disable_account),
         )
         .route(
             "/admin/accounts/{account_id}/enable",
-            axum::routing::post(api::admin::accounts::enable_account),
+            post(api::admin::accounts::enable_account),
         )
         // .route("/admin/accounts/{account_id}/change-passwd", axum::routing::post(api::admin::accounts::))        // Apply middleware to inject DB connection for Basic Auth
         .layer(axum::middleware::from_fn_with_state(

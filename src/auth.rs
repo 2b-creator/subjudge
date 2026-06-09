@@ -3,16 +3,16 @@
 //! 基于 `axum_auth` 提供 HTTP Basic / Bearer (JWT) 两种认证方式，
 //! 并通过 `AuthUser` 提取器在 handler 中自动完成校验。
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use axum::{
-    extract::FromRequestParts,
-    http::{request::Parts, StatusCode},
-    response::{IntoResponse, Response},
     Json,
+    extract::FromRequestParts,
+    http::{StatusCode, request::Parts},
+    response::{IntoResponse, Response},
 };
 use axum_auth::{AuthBasic, AuthBearer};
-use bcrypt::{hash, verify, DEFAULT_COST};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use bcrypt::{DEFAULT_COST, hash, verify};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 
@@ -54,7 +54,7 @@ impl UserRole {
     }
 
     pub fn is_team(&self) -> bool {
-        matches!(self, UserRole::Team)
+        matches!(self, UserRole::Team | UserRole::Admin)
     }
 }
 
@@ -101,7 +101,10 @@ pub struct AuthError {
 
 impl AuthError {
     fn new(message: impl Into<String>, status: StatusCode) -> Self {
-        Self { message: message.into(), status }
+        Self {
+            message: message.into(),
+            status,
+        }
     }
 
     fn unauthorized(message: impl Into<String>) -> Self {
@@ -111,7 +114,11 @@ impl AuthError {
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
-        (self.status, Json(serde_json::json!({ "error": self.message }))).into_response()
+        (
+            self.status,
+            Json(serde_json::json!({ "error": self.message })),
+        )
+            .into_response()
     }
 }
 
@@ -123,7 +130,9 @@ where
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // 优先 Basic 认证（需要数据库校验），否则回退到 Bearer (JWT)。
-        if let Ok(AuthBasic((username, password))) = AuthBasic::from_request_parts(parts, _state).await {
+        if let Ok(AuthBasic((username, password))) =
+            AuthBasic::from_request_parts(parts, _state).await
+        {
             return Self::from_basic(parts, &username, password.as_deref()).await;
         }
 
@@ -139,7 +148,11 @@ where
 
 impl AuthUser {
     /// 通过 HTTP Basic 凭据查库校验。
-    async fn from_basic(parts: &Parts, username: &str, password: Option<&str>) -> Result<Self, AuthError> {
+    async fn from_basic(
+        parts: &Parts,
+        username: &str,
+        password: Option<&str>,
+    ) -> Result<Self, AuthError> {
         let db = parts
             .extensions
             .get::<DatabaseConnection>()
@@ -149,17 +162,29 @@ impl AuthUser {
             .filter(Column::AccountUsername.eq(username))
             .one(db)
             .await
-            .map_err(|e| AuthError::new(format!("数据库错误: {e}"), StatusCode::INTERNAL_SERVER_ERROR))?
+            .map_err(|e| {
+                AuthError::new(
+                    format!("数据库错误: {e}"),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?
             .ok_or_else(|| AuthError::unauthorized("用户名或密码错误"))?;
 
         if !user.enabled {
             return Err(AuthError::unauthorized("账户已被禁用"));
         }
 
-        let hash = user.password_hash.as_deref().ok_or_else(|| AuthError::unauthorized("账户未设置密码"))?;
+        let hash = user
+            .password_hash
+            .as_deref()
+            .ok_or_else(|| AuthError::unauthorized("账户未设置密码"))?;
         let password = password.ok_or_else(|| AuthError::unauthorized("缺少密码"))?;
-        let valid = password::verify_password(password, hash)
-            .map_err(|e| AuthError::new(format!("密码校验错误: {e}"), StatusCode::INTERNAL_SERVER_ERROR))?;
+        let valid = password::verify_password(password, hash).map_err(|e| {
+            AuthError::new(
+                format!("密码校验错误: {e}"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
         if !valid {
             return Err(AuthError::unauthorized("用户名或密码错误"));
         }
@@ -197,7 +222,9 @@ where
     type Rejection = std::convert::Infallible;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        Ok(OptionalAuthUser(AuthUser::from_request_parts(parts, state).await.ok()))
+        Ok(OptionalAuthUser(
+            AuthUser::from_request_parts(parts, state).await.ok(),
+        ))
     }
 }
 
@@ -235,8 +262,12 @@ pub mod token {
         team_id: Option<String>,
     ) -> Result<String> {
         let claims = Claims::new(user_id, username, role, team_id);
-        encode(&Header::default(), &claims, &EncodingKey::from_secret(JWT_SECRET.as_bytes()))
-            .map_err(|e| anyhow!("生成 token 失败: {e}"))
+        encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(JWT_SECRET.as_bytes()),
+        )
+        .map_err(|e| anyhow!("生成 token 失败: {e}"))
     }
 
     pub fn validate_token(token: &str) -> Result<Claims> {
@@ -273,7 +304,10 @@ impl AuthService {
             return Err(anyhow!("Account has been disabled"));
         }
 
-        let hash = user.password_hash.as_deref().ok_or_else(|| anyhow!("Account has no password set"))?;
+        let hash = user
+            .password_hash
+            .as_deref()
+            .ok_or_else(|| anyhow!("Account has no password set"))?;
         if !password::verify_password(password, hash)? {
             return Err(anyhow!("Invalid username or password"));
         }
@@ -290,7 +324,10 @@ impl AuthService {
             .map_err(|e| anyhow!("数据库错误: {e}"))?
             .ok_or_else(|| anyhow!("User not found"))?;
 
-        Ok((UserRole::from_account_type(&user.account_type), user.team_id))
+        Ok((
+            UserRole::from_account_type(&user.account_type),
+            user.team_id,
+        ))
     }
 }
 

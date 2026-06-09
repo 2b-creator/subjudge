@@ -16,6 +16,8 @@ pub struct Model {
     pub contest_time: String, // Real time.
     pub entry_point: Option<String>,
     pub file: Json,
+    #[sea_orm(column_type = "String(None)", unique)]
+    pub file_uuid: String,
     pub reaction: Option<Json>, // Reaction video from team's webcam. Only allowed mime types are video/* or application/vnd.apple.mpegurl.
 }
 
