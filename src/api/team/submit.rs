@@ -4,7 +4,7 @@ use crate::models::submissions::ActiveModel as SubmissionActiveModel;
 use crate::models::accounts::Entity as Account;
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Multipart, Path, State},
     http::StatusCode,
 };
 use sea_orm::{DatabaseConnection, EntityTrait, ActiveModelTrait, Set, NotSet};
@@ -58,8 +58,27 @@ pub async fn submit_solution_id(
     auth_user: AuthUser,
     State(db): State<DatabaseConnection>,
     Path((contest_id, problem_id)): Path<(String, String)>,
-    Json(payload): Json<SubmitInfoRequest>,
+    // Json(payload): Json<SubmitInfoRequest>,
+    mut multipart: Multipart,
 ) -> Result<Json<SubmitInfoRespond>, (StatusCode, Json<ErrorResponse>)> {
+    // 1. 定义临时变量接收解析出的数据
+    let mut payload: Option<SubmitInfoRequest> = None;
+    let mut file_bytes: Option<Vec<u8>> = None;
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let name = field.name().unwrap_or_default().to_string();
+        match name.as_str() {
+            "metadata" => {
+                let text = field.text().await.map_err(|_| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Invalid metadata".into() })))?;
+                payload = Some(serde_json::from_str(&text).map_err(|_| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Invalid JSON".into() })))?);
+            }
+            "file" => {
+                file_bytes = Some(field.bytes().await.map_err(|_| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "File upload failed".into() })))?.to_vec());
+            }
+            _ => {}
+        }
+    }
+    let payload = payload.ok_or((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Missing metadata".into() })))?;
+    let file_content = file_bytes.ok_or((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Missing file".into() })))?;
     // todo for sending judgehost
     // Check if user is a team member
     if !auth_user.role.is_team() {
@@ -157,7 +176,7 @@ pub async fn submit_solution_id(
         time: Set(payload.time),
         contest_time: Set(payload.contest_time),
         entry_point: Set(payload.entry_point),
-        file: Set(payload.file),
+        // file: Set(payload.file),
         file_uuid: Set(file_uuid),
         reaction: Set(payload.reaction),
     };
