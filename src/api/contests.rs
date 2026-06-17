@@ -25,15 +25,15 @@
 //! - Cannot set start time to past or within 30 seconds of current time
 //! - Thaw time modifications require appropriate contest state
 
-use crate::models::contest_group::Entity as ContestGroup;
-use crate::models::contest_judgement::Entity as ContestJudgement;
-use crate::models::contest_language::Entity as ContestLanguage;
-use crate::models::contest_organization::Entity as ContestOrganization;
-use crate::models::contest_problem::Entity as ContestProblem;
-use crate::models::contest_run::Entity as ContestRun;
-use crate::models::contest_submission::Entity as ContestSubmission;
-use crate::models::contest_team::Entity as ContestTeam;
-use crate::models::contest_clarification::Entity as ContestClarification;
+use crate::models::join_tables::contest_group::Entity as ContestGroup;
+use crate::models::join_tables::contest_judgement::Entity as ContestJudgement;
+use crate::models::join_tables::contest_language::Entity as ContestLanguage;
+use crate::models::join_tables::contest_organization::Entity as ContestOrganization;
+use crate::models::join_tables::contest_problem::Entity as ContestProblem;
+use crate::models::join_tables::contest_run::Entity as ContestRun;
+use crate::models::join_tables::contest_submission::Entity as ContestSubmission;
+use crate::models::join_tables::contest_team::Entity as ContestTeam;
+use crate::models::join_tables::contest_clarification::Entity as ContestClarification;
 
 use crate::models::contests::{Entity as Contest, Model as ContestModel};
 use crate::models::groups::{Entity as Group, Model as GroupModel};
@@ -453,7 +453,7 @@ pub async fn get_contest_teams(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let team_ids: Vec<String> = ContestTeam::find()
-        .filter(crate::models::contest_team::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_team::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -483,7 +483,7 @@ pub async fn get_contest_team(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
     let team_ids: Vec<String> = ContestTeam::find()
-        .filter(crate::models::contest_team::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_team::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -632,7 +632,7 @@ pub async fn get_contest_languages(
 
     // Find languages associated with this contest through contest_language
     let language_ids: Vec<String> = ContestLanguage::find()
-        .filter(crate::models::contest_language::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_language::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -664,7 +664,7 @@ pub async fn get_contest_language(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let language_ids: Vec<String> = ContestLanguage::find()
-        .filter(crate::models::contest_language::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_language::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -699,7 +699,7 @@ pub async fn get_contest_problems(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let problem_ids: Vec<String> = ContestProblem::find()
-        .filter(crate::models::contest_problem::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_problem::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -731,7 +731,7 @@ pub async fn get_contest_problem(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let problem_ids: Vec<String> = ContestProblem::find()
-        .filter(crate::models::contest_problem::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_problem::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -766,7 +766,7 @@ pub async fn get_contest_groups(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let group_ids: Vec<String> = ContestGroup::find()
-        .filter(crate::models::contest_group::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_group::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -796,7 +796,7 @@ pub async fn get_contest_group(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
     let group_ids: Vec<String> = ContestGroup::find()
-        .filter(crate::models::contest_group::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_group::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -829,7 +829,7 @@ pub async fn get_contest_organizations(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let organization_ids: Vec<String> = ContestOrganization::find()
-        .filter(crate::models::contest_organization::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_organization::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -861,7 +861,7 @@ pub async fn get_contest_organization(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let organization_ids: Vec<String> = ContestOrganization::find()
-        .filter(crate::models::contest_organization::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_organization::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -897,7 +897,7 @@ pub async fn get_contest_submissions(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let submission_ids: Vec<String> = ContestSubmission::find()
-        .filter(crate::models::contest_submission::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_submission::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -929,7 +929,7 @@ pub async fn get_contest_submission(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let submission_ids: Vec<String> = ContestSubmission::find()
-        .filter(crate::models::contest_submission::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_submission::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -965,7 +965,7 @@ pub async fn get_contest_judgements(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let judgements_result_ids: Vec<String> = ContestJudgement::find()
-        .filter(crate::models::contest_judgement::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_judgement::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -997,7 +997,7 @@ pub async fn get_contest_judgement(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let judgements_result_ids: Vec<String> = ContestJudgement::find()
-        .filter(crate::models::contest_judgement::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_judgement::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -1033,7 +1033,7 @@ pub async fn get_contest_runs(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let run_result_ids: Vec<String> = ContestRun::find()
-        .filter(crate::models::contest_run::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_run::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -1065,7 +1065,7 @@ pub async fn get_contest_run(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let run_result_ids: Vec<String> = ContestRun::find()
-        .filter(crate::models::contest_run::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_run::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -1099,7 +1099,7 @@ pub async fn get_contest_clarifications(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let clari_ids: Vec<String> = ContestClarification::find()
-        .filter(crate::models::contest_clarification::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_clarification::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -1131,7 +1131,7 @@ pub async fn get_contest_clarification(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let clari_ids: Vec<String> = ContestClarification::find()
-        .filter(crate::models::contest_clarification::Column::ContestId.eq(&contest_id))
+        .filter(crate::models::join_tables::contest_clarification::Column::ContestId.eq(&contest_id))
         .all(&db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?

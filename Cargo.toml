@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = { version = "0.8.9", features = ["macros"] }
+axum = { version = "0.8.9", features = ["macros", "multipart"] }
 axum-auth = "0.8.1"
 axum-extra = { version = "0.10", features = ["typed-header"] }
 tokio = { version = "1", features = ["full"] }
@@ -22,3 +22,4 @@ jsonwebtoken = "9.3"
 bcrypt = "0.15"
 log4rs = "1.4.0"
 sha2 = "0.11.0"
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }

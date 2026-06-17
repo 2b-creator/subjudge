@@ -21,3 +21,4 @@ pub mod team;
 pub mod auth;
 pub mod contests;
 pub mod sync;
+pub mod judge;

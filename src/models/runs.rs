@@ -9,7 +9,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = true)]
     pub id: i32, // ID
     pub judgement_id: String,
-    pub ordinal: i32,
+    pub ordinal: i32, // Ordering of runs in the judgement. Must be different for every run in a judgement. Runs for the same test case must have the same ordinal. Must be between 1 and problem:test_data_count.
     pub judgement_type_id: String,
     pub time: String,
     pub contest_time: String,

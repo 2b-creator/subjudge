@@ -1,9 +1,11 @@
 mod api;
 mod auth;
 mod models;
+mod redis_client;
 
 use axum::Router;
 use axum::routing::{get, patch, post};
+use redis_client::RedisClient;
 use sea_orm::Database;
 
 #[tokio::main]
@@ -12,6 +14,11 @@ async fn main() {
     let db = Database::connect(db_url)
         .await
         .expect("Failed to connect to DB");
+
+    let redis_url = "redis://127.0.0.1:6379";
+    let redis = RedisClient::new(redis_url)
+        .await
+        .expect("Failed to connect to Redis");
 
     // Public routes that don't require authentication
     let public_routes = Router::new()
@@ -142,7 +149,13 @@ async fn main() {
             "/admin/accounts/{account_id}/enable",
             post(api::admin::accounts::enable_account),
         )
-        // .route("/admin/accounts/{account_id}/change-passwd", axum::routing::post(api::admin::accounts::))        // Apply middleware to inject DB connection for Basic Auth
+        // query judge queue
+        .route(
+            "/judge/tasks/",
+            get(api::judge::tasks::get_tasks),
+        )
+        // .route("/admin/accounts/{account_id}/change-passwd", axum::routing::post(api::admin::accounts::))
+        // Apply middleware to inject DB connection for Basic Auth
         .layer(axum::middleware::from_fn_with_state(
             db.clone(),
             auth::inject_db_middleware,
@@ -150,7 +163,10 @@ async fn main() {
 
     let api_routes = Router::new().merge(public_routes).merge(protected_routes);
 
-    let app = Router::new().nest("/api", api_routes).with_state(db);
+    let app = Router::new()
+        .nest("/api", api_routes)
+        .layer(axum::Extension(redis))
+        .with_state(db);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();

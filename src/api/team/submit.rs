@@ -2,14 +2,17 @@ use crate::auth::AuthUser;
 use crate::models::accounts::Entity as Account;
 use crate::models::languages::Entity as Language;
 use crate::models::submissions::ActiveModel as SubmissionActiveModel;
+use crate::redis_client::RedisClient;
 use axum::{
     Json,
     extract::{Multipart, Path, State},
     http::StatusCode,
+    Extension,
 };
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, NotSet, Set};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use redis::AsyncCommands;
 #[derive(Deserialize)]
 pub struct SubmitInfoRequest {
     // pub id: String, // ID
@@ -57,6 +60,7 @@ pub struct ErrorResponse {
 pub async fn submit_solution_id(
     auth_user: AuthUser,
     State(db): State<DatabaseConnection>,
+    Extension(redis): Extension<RedisClient>,
     Path((contest_id, problem_id)): Path<(String, String)>,
     // Json(payload): Json<SubmitInfoRequest>,
     mut multipart: Multipart,
@@ -110,7 +114,7 @@ pub async fn submit_solution_id(
             error: "Missing metadata".into(),
         }),
     ))?;
-    let file_content = file_bytes.ok_or((
+    let _file_content = file_bytes.ok_or((
         StatusCode::BAD_REQUEST,
         Json(ErrorResponse {
             error: "Missing file".into(),
@@ -209,16 +213,16 @@ pub async fn submit_solution_id(
 
     let submission = SubmissionActiveModel {
         id: NotSet, // Let database auto-generate the i32 ID
-        language_id: Set(payload.language_id),
-        problem_id: Set(problem_id),
-        team_id: Set(payload.team_id),
+        language_id: Set(payload.language_id.clone()),
+        problem_id: Set(problem_id.clone()),
+        team_id: Set(payload.team_id.clone()),
         account_id: Set(Some(auth_user.user_id.clone())),
-        time: Set(payload.time),
-        contest_time: Set(payload.contest_time),
-        entry_point: Set(payload.entry_point),
-        // file: Set(payload.file),
-        file_uuid: Set(file_uuid),
-        reaction: Set(payload.reaction),
+        time: Set(payload.time.clone()),
+        contest_time: Set(payload.contest_time.clone()),
+        entry_point: Set(payload.entry_point.clone()),
+        file: NotSet,
+        file_uuid: Set(file_uuid.clone()),
+        reaction: Set(payload.reaction.clone()),
     };
 
     // todo for sending judgehost
@@ -232,6 +236,30 @@ pub async fn submit_solution_id(
             }),
         )
     })?;
+
+    // publish task to Redis queue
+    let task_payload = serde_json::json!({
+        "submission_id": inserted.id,
+        "language_id": inserted.language_id,
+        "problem_id": problem_id,
+        "team_id": inserted.team_id,
+        "file_uuid": file_uuid,
+        "entry_point": inserted.entry_point,
+        "contest_time": inserted.contest_time,
+    });
+
+    let mut redis_conn = redis.get_connection();
+    let _: () = redis_conn
+        .rpush("judge_queue", task_payload.to_string())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to publish task to Redis: {}", e),
+                }),
+            )
+        })?;
 
     // Construct file struct from the submitted file
     let files = if let Some(file_obj) = inserted.file.as_object() {

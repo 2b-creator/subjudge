@@ -28,6 +28,12 @@ pub enum Relation {
         to = "super::verdicts::Column::Id"
     )]
     Verdicts,
+     #[sea_orm(
+        belongs_to = "super::submissions::Entity",
+        from = "Column::SubmissionId",
+        to = "super::submissions::Column::Id"
+    )]
+    Submissions,
 }
 
 impl ActiveModelBehavior for ActiveModel {}
