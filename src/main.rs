@@ -1,3 +1,5 @@
+extern crate core;
+
 mod api;
 mod auth;
 mod models;
@@ -155,7 +157,7 @@ async fn main() {
         )
         .route(
             "/judge/tasks/front",
-            post(api::judge::tasks::handle_front),
+            post(api::judge::tasks::handle_front_run),
         )
         // .route("/admin/accounts/{account_id}/change-passwd", axum::routing::post(api::admin::accounts::))
         // Apply middleware to inject DB connection for Basic Auth
