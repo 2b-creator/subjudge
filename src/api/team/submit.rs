@@ -1,15 +1,15 @@
 use crate::auth::AuthUser;
+use crate::models::accounts::Entity as Account;
 use crate::models::languages::Entity as Language;
 use crate::models::submissions::ActiveModel as SubmissionActiveModel;
-use crate::models::accounts::Entity as Account;
 use axum::{
     Json,
     extract::{Multipart, Path, State},
     http::StatusCode,
 };
-use sea_orm::{DatabaseConnection, EntityTrait, ActiveModelTrait, Set, NotSet};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, NotSet, Set};
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 #[derive(Deserialize)]
 pub struct SubmitInfoRequest {
     // pub id: String, // ID
@@ -24,7 +24,7 @@ pub struct SubmitInfoRequest {
     pub reaction: Option<serde_json::Value>, // Reaction video from team's webcam. Only allowed mime types are video/* or application/vnd.apple.mpegurl.
 }
 #[derive(Debug, Serialize)]
-pub struct FileStruct{
+pub struct FileStruct {
     pub href: String,
     pub mime: String,
     pub file: String,
@@ -68,18 +68,55 @@ pub async fn submit_solution_id(
         let name = field.name().unwrap_or_default().to_string();
         match name.as_str() {
             "metadata" => {
-                let text = field.text().await.map_err(|_| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Invalid metadata".into() })))?;
-                payload = Some(serde_json::from_str(&text).map_err(|_| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Invalid JSON".into() })))?);
+                let text = field.text().await.map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: "Invalid metadata".into(),
+                        }),
+                    )
+                })?;
+                payload = Some(serde_json::from_str(&text).map_err(|_| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: "Invalid JSON".into(),
+                        }),
+                    )
+                })?);
             }
             "file" => {
-                file_bytes = Some(field.bytes().await.map_err(|_| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "File upload failed".into() })))?.to_vec());
+                file_bytes = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|_| {
+                            (
+                                StatusCode::BAD_REQUEST,
+                                Json(ErrorResponse {
+                                    error: "File upload failed".into(),
+                                }),
+                            )
+                        })?
+                        .to_vec(),
+                );
             }
             _ => {}
         }
     }
-    let payload = payload.ok_or((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Missing metadata".into() })))?;
-    let file_content = file_bytes.ok_or((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "Missing file".into() })))?;
-    // todo for sending judgehost
+    let payload = payload.ok_or((
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: "Missing metadata".into(),
+        }),
+    ))?;
+    let file_content = file_bytes.ok_or((
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: "Missing file".into(),
+        }),
+    ))?;
+
     // Check if user is a team member
     if !auth_user.role.is_team() {
         return Err((
@@ -165,10 +202,13 @@ pub async fn submit_solution_id(
     let mut hasher = Sha256::new();
     hasher.update(file_content.as_bytes());
     let hash_result = hasher.finalize();
-    let file_uuid = hash_result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+    let file_uuid = hash_result
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
 
     let submission = SubmissionActiveModel {
-        id: NotSet,  // Let database auto-generate the i32 ID
+        id: NotSet, // Let database auto-generate the i32 ID
         language_id: Set(payload.language_id),
         problem_id: Set(problem_id),
         team_id: Set(payload.team_id),
@@ -180,6 +220,8 @@ pub async fn submit_solution_id(
         file_uuid: Set(file_uuid),
         reaction: Set(payload.reaction),
     };
+
+    // todo for sending judgehost
 
     // Insert submission into database and get the generated ID
     let inserted = submission.insert(&db).await.map_err(|e| {
@@ -194,13 +236,27 @@ pub async fn submit_solution_id(
     // Construct file struct from the submitted file
     let files = if let Some(file_obj) = inserted.file.as_object() {
         vec![FileStruct {
-            href: format!("/api/team/contest/{}/submissions/{}/files", contest_id, inserted.id),
-            mime: file_obj.get("mime").and_then(|v| v.as_str()).unwrap_or("application/zip").to_string(),
-            file: file_obj.get("data").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            href: format!(
+                "/api/team/contest/{}/submissions/{}/files",
+                contest_id, inserted.id
+            ),
+            mime: file_obj
+                .get("mime")
+                .and_then(|v| v.as_str())
+                .unwrap_or("application/zip")
+                .to_string(),
+            file: file_obj
+                .get("data")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
         }]
     } else if let Some(file_str) = inserted.file.as_str() {
         vec![FileStruct {
-            href: format!("/api/team/contests/{}/submissions/{}/files", contest_id, inserted.id),
+            href: format!(
+                "/api/team/contests/{}/submissions/{}/files",
+                contest_id, inserted.id
+            ),
             mime: "application/zip".to_string(),
             file: file_str.to_string(),
         }]
@@ -221,7 +277,6 @@ pub async fn submit_solution_id(
         message: "Submission created successfully!".to_string(),
     }))
 }
-
 
 pub async fn submit_solution(
     auth_user: AuthUser,
@@ -314,10 +369,13 @@ pub async fn submit_solution(
     let mut hasher = Sha256::new();
     hasher.update(file_content.as_bytes());
     let hash_result = hasher.finalize();
-    let file_uuid = hash_result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+    let file_uuid = hash_result
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
 
     let submission = SubmissionActiveModel {
-        id: NotSet,  // Let database auto-generate the i32 ID
+        id: NotSet, // Let database auto-generate the i32 ID
         language_id: Set(payload.language_id),
         problem_id: Set(payload.problem_id),
         team_id: Set(payload.team_id),
@@ -343,13 +401,27 @@ pub async fn submit_solution(
     // Construct file struct from the submitted file
     let files = if let Some(file_obj) = inserted.file.as_object() {
         vec![FileStruct {
-            href: format!("/api/team/contests/{}/submissions/{}/files", contest_id, inserted.id),
-            mime: file_obj.get("mime").and_then(|v| v.as_str()).unwrap_or("application/zip").to_string(),
-            file: file_obj.get("data").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            href: format!(
+                "/api/team/contests/{}/submissions/{}/files",
+                contest_id, inserted.id
+            ),
+            mime: file_obj
+                .get("mime")
+                .and_then(|v| v.as_str())
+                .unwrap_or("application/zip")
+                .to_string(),
+            file: file_obj
+                .get("data")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
         }]
     } else if let Some(file_str) = inserted.file.as_str() {
         vec![FileStruct {
-            href: format!("/api/team/contests/{}/submissions/{}/files", contest_id, inserted.id),
+            href: format!(
+                "/api/team/contests/{}/submissions/{}/files",
+                contest_id, inserted.id
+            ),
             mime: "application/zip".to_string(),
             file: file_str.to_string(),
         }]
