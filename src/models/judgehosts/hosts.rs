@@ -9,7 +9,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub status: String,
-    pub lasts: String,
+    pub last_judge: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

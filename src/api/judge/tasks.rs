@@ -4,6 +4,8 @@ use crate::models::judgements::Entity as JudgementsEntity;
 use crate::models::runs::ActiveModel as RunsActiveModel;
 use crate::models::runs::Entity as RunsEntity;
 use crate::models::problems::Entity as ProblemsEntity;
+use crate::models::judgehosts::hosts::Entity as JudgehostsEntity;
+use crate::models::judgehosts::hosts::ActiveModel as JudgehostsActiveModel;
 use crate::redis_client::RedisClient;
 use axum::{
     Extension, Json,
@@ -30,6 +32,8 @@ pub struct Tasks {
     pub problem_id: String,
     pub team_id: String,
     pub contest_time: String,
+    pub test_data_count: i32, // Number of test cases for this problem
+    pub completed_runs: Vec<i32>, // List of ordinals that have already been judged
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Runs {
@@ -76,6 +80,72 @@ pub async fn get_front(
     }
 
     let mut redis_conn: redis::aio::ConnectionManager = redis.get_connection();
+
+    // Get queue length to determine task availability
+    let queue_length: usize = redis_conn.llen("judge_queue").await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Redis error: {}", e),
+            }),
+        )
+    })?;
+
+    if queue_length == 0 {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "No tasks in queue".to_string(),
+            }),
+        ));
+    }
+
+    // Count active judgehosts to optimize task distribution
+    let active_judgehosts_count = JudgehostsEntity::find()
+        .filter(crate::models::judgehosts::hosts::Column::Status.eq("active"))
+        .all(&db)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to count judgehosts: {}", e),
+                }),
+            )
+        })?
+        .len();
+
+    // Calculate advised concurrency per judgehost
+    // If we have more judgehosts than tasks, each gets at most 1 task
+    // Otherwise, distribute tasks evenly
+    let advised_tasks_per_host = if active_judgehosts_count == 0 {
+        1 // Default to 1 if no active hosts found yet
+    } else {
+        let base = queue_length / active_judgehosts_count as usize;
+        std::cmp::max(1, base) // At least 1 task per host
+    };
+
+    // Check current judgehost's active task count in Redis
+    let judgehost_id = &auth_user.username;
+    let active_tasks_key = format!("judgehost:{}:active_tasks", judgehost_id);
+    let current_active_tasks: usize = redis_conn
+        .get(&active_tasks_key)
+        .await
+        .unwrap_or(0);
+
+    // // If this judgehost already has enough tasks, suggest waiting
+    // if current_active_tasks >= advised_tasks_per_host {
+    //     return Err((
+    //         StatusCode::TOO_MANY_REQUESTS,
+    //         Json(ErrorResponse {
+    //             error: format!(
+    //                 "Judgehost has {} active tasks (advised: {}). Active judgehosts: {}, Queue: {}",
+    //                 current_active_tasks, advised_tasks_per_host, active_judgehosts_count, queue_length
+    //             ),
+    //         }),
+    //     ));
+    // }
+
     let task_json: Option<String> = redis_conn.lindex("judge_queue", 0).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -133,7 +203,7 @@ pub async fn get_front(
 
     let elapsed = Utc::now().signed_duration_since(start_time);
     if elapsed.num_seconds() > 60 {
-        // Pop from queue
+        // Pop from queue and decrement active tasks
         let _: Option<String> = redis_conn.lpop("judge_queue", None).await.map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -151,7 +221,106 @@ pub async fn get_front(
         ));
     }
 
-    Ok(Json(task))
+    // Update judgehost's last_judge timestamp
+    let judgehost = JudgehostsEntity::find_by_id(judgehost_id.clone())
+        .one(&db)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to query judgehost: {}", e),
+                }),
+            )
+        })?;
+
+    if let Some(host) = judgehost {
+        let mut host_active: JudgehostsActiveModel = host.into();
+        host_active.last_judge = Set(Utc::now().to_rfc3339());
+        host_active.status = Set("active".to_string());
+
+        host_active.update(&db).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to update judgehost: {}", e),
+                }),
+            )
+        })?;
+    }
+
+    // Get problem details to know test_data_count
+    let problem = ProblemsEntity::find_by_id(task.problem_id.clone())
+        .one(&db)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to query problem: {}", e),
+                }),
+            )
+        })?
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "Problem not found".to_string(),
+            }),
+        ))?;
+
+    // Get completed runs for this judgement
+    let completed_runs = RunsEntity::find()
+        .filter(crate::models::runs::Column::JudgementId.eq(task.judgement_id))
+        .all(&db)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to query runs: {}", e),
+                }),
+            )
+        })?;
+
+    // Extract ordinals of completed runs
+    let completed_ordinals: Vec<i32> = completed_runs
+        .into_iter()
+        .map(|run| run.ordinal)
+        .collect();
+
+    // Create enriched task response
+    let enriched_task = Tasks {
+        judgement_id: task.judgement_id,
+        submission_id: task.submission_id,
+        language_id: task.language_id,
+        problem_id: task.problem_id,
+        team_id: task.team_id,
+        contest_time: task.contest_time,
+        test_data_count: problem.test_data_count,
+        completed_runs: completed_ordinals,
+    };
+
+    // Increment active task count for this judgehost
+    // let _: () = redis_conn.incr(&active_tasks_key, 1).await.map_err(|e| {
+    //     (
+    //         StatusCode::INTERNAL_SERVER_ERROR,
+    //         Json(ErrorResponse {
+    //             error: format!("Redis error: {}", e),
+    //         }),
+    //     )
+    // })?;
+
+    // // Set expiration to 2 minutes (cleanup stale counters)
+    // let _: () = redis_conn.expire(&active_tasks_key, 120).await.map_err(|e| {
+    //     (
+    //         StatusCode::INTERNAL_SERVER_ERROR,
+    //         Json(ErrorResponse {
+    //             error: format!("Redis error: {}", e),
+    //         }),
+    //     )
+    // })?;
+
+    Ok(Json(enriched_task))
 }
 
 // rewrite
@@ -407,6 +576,22 @@ pub async fn handle_judge(
                 }),
             )
         })?;
+
+        // Decrement active task count for this judgehost
+        let judgehost_id = &auth_user.username;
+        let active_tasks_key = format!("judgehost:{}:active_tasks", judgehost_id);
+        let current_count: i32 = redis_conn.get(&active_tasks_key).await.unwrap_or(0);
+
+        if current_count > 0 {
+            let _: () = redis_conn.decr(&active_tasks_key, 1).await.map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: format!("Redis error: {}", e),
+                    }),
+                )
+            })?;
+        }
 
         let message = StatusResponse {
             message: format!("Judgement completed with status: {}", status),
