@@ -2,6 +2,7 @@ use crate::auth::AuthUser;
 use crate::models::accounts::Entity as Account;
 use crate::models::languages::Entity as Language;
 use crate::models::submissions::ActiveModel as SubmissionActiveModel;
+use crate::models::judgements::ActiveModel as JudgementActiveModel;
 use crate::redis_client::RedisClient;
 use axum::{
     Json,
@@ -228,7 +229,30 @@ pub async fn submit_solution_id(
     // todo for sending judgehost
 
     // Insert submission into database and get the generated ID
-    let inserted = submission.insert(&db).await.map_err(|e| {
+    let inserted: crate::models::submissions::Model = submission.insert(&db).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to insert submission: {}", e),
+            }),
+        )
+    })?;
+
+    let _judgements: JudgementActiveModel = JudgementActiveModel {
+        id: NotSet,
+        submission_id: Set(inserted.id),
+        judgement_type_id: Set(Option::from("PD".to_string())),
+        simplified_judgement_type_id: Set(Option::from("PD".to_string())),
+        score: Set(0.0),
+        current: NotSet,
+        start_time: todo!(),
+        start_contest_time: todo!(),
+        end_time: todo!(),
+        end_contest_time: todo!(),
+        max_run_time: todo!(),
+    };
+
+    let j_inserted: crate::models::judgements::Model = _judgements.insert(&db).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -239,6 +263,7 @@ pub async fn submit_solution_id(
 
     // publish task to Redis queue
     let task_payload = serde_json::json!({
+        "judgement_id": j_inserted.id,
         "submission_id": inserted.id,
         "language_id": inserted.language_id,
         "problem_id": problem_id,

@@ -2,7 +2,6 @@
 pub mod groups;
 pub mod organizations;
 pub mod teams;
-pub mod team_group;
 pub mod access;
 pub mod contests;
 pub mod languages;

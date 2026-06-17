@@ -7,3 +7,4 @@ pub mod contest_team;
 pub mod contest_submission;
 pub mod contest_run;
 pub mod contest_clarification;
+pub mod team_group;

@@ -17,7 +17,8 @@
 //! single entities without explicit transactions.
 
 use crate::auth::AuthUser;
-use crate::models::{Syncable, groups, team_group, teams, contests,organizations};
+use crate::models::{Syncable, groups, teams, contests,organizations};
+use crate::models::join_tables::team_group;
 use axum::{Json, extract::State};
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait,

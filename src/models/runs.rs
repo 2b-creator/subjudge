@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = true)]
     pub id: i32, // ID
-    pub judgement_id: String,
+    pub judgement_id: i32,
     pub ordinal: i32, // Ordering of runs in the judgement. Must be different for every run in a judgement. Runs for the same test case must have the same ordinal. Must be between 1 and problem:test_data_count.
     pub judgement_type_id: String,
-    pub time: String,
-    pub contest_time: String,
+    pub time: String, // 	Absolute time when run completed.
+    pub contest_time: String, // Contest relative time when run completed.
     pub run_time: f32, // Run time in seconds. Should be a non-negative integer multiple of 0.001. The reason for this is to not have rounding ambiguities while still using the natural unit of seconds.
 }
 
