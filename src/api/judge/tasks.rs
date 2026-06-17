@@ -118,20 +118,20 @@ pub async fn get_front(
     // Calculate advised concurrency per judgehost
     // If we have more judgehosts than tasks, each gets at most 1 task
     // Otherwise, distribute tasks evenly
-    let advised_tasks_per_host = if active_judgehosts_count == 0 {
-        1 // Default to 1 if no active hosts found yet
-    } else {
-        let base = queue_length / active_judgehosts_count as usize;
-        std::cmp::max(1, base) // At least 1 task per host
-    };
+    // let advised_tasks_per_host = if active_judgehosts_count == 0 {
+    //     1 // Default to 1 if no active hosts found yet
+    // } else {
+    //     let base = queue_length / active_judgehosts_count as usize;
+    //     std::cmp::max(1, base) // At least 1 task per host
+    // };
 
     // Check current judgehost's active task count in Redis
     let judgehost_id = &auth_user.username;
-    let active_tasks_key = format!("judgehost:{}:active_tasks", judgehost_id);
-    let current_active_tasks: usize = redis_conn
-        .get(&active_tasks_key)
-        .await
-        .unwrap_or(0);
+    // let active_tasks_key = format!("judgehost:{}:active_tasks", judgehost_id);
+    // let current_active_tasks: usize = redis_conn
+    //     .get(&active_tasks_key)
+    //     .await
+    //     .unwrap_or(0);
 
     // // If this judgehost already has enough tasks, suggest waiting
     // if current_active_tasks >= advised_tasks_per_host {
