@@ -9,12 +9,11 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub status: String,
+    pub lasts: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-
-}
+pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 impl Syncable for Model {

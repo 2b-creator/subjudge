@@ -149,10 +149,13 @@ async fn main() {
             "/admin/accounts/{account_id}/enable",
             post(api::admin::accounts::enable_account),
         )
-        // query judge queue
         .route(
-            "/judge/tasks/",
-            get(api::judge::tasks::get_tasks),
+            "/judge/tasks/front",
+            get(api::judge::tasks::get_front),
+        )
+        .route(
+            "/judge/tasks/front",
+            post(api::judge::tasks::handle_front),
         )
         // .route("/admin/accounts/{account_id}/change-passwd", axum::routing::post(api::admin::accounts::))
         // Apply middleware to inject DB connection for Basic Auth

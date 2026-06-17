@@ -261,6 +261,7 @@ pub async fn submit_solution_id(
             )
         })?;
 
+
     // Construct file struct from the submitted file
     let files = if let Some(file_obj) = inserted.file.as_object() {
         vec![FileStruct {
