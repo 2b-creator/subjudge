@@ -11,6 +11,8 @@ pub struct Model {
     pub submission_id: i32,
     pub judgement_type_id: Option<String>,
     pub simplified_judgement_type_id: Option<String>,
+    pub compile_warning: Option<String>,
+    pub compile_error: Option<String>,
     pub score: f64,
     pub current: Option<bool>,
     pub start_time: String,         // Absolute time when judgement started.

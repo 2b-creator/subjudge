@@ -1,21 +1,17 @@
 use crate::auth::AuthUser;
+use crate::models::judgehosts::hosts::ActiveModel as JudgehostsActiveModel;
+use crate::models::judgehosts::hosts::Entity as JudgehostsEntity;
 use crate::models::judgements::ActiveModel as JudgementActiveModel;
 use crate::models::judgements::Entity as JudgementsEntity;
+use crate::models::problems::Entity as ProblemsEntity;
 use crate::models::runs::ActiveModel as RunsActiveModel;
 use crate::models::runs::Entity as RunsEntity;
-use crate::models::problems::Entity as ProblemsEntity;
-use crate::models::judgehosts::hosts::Entity as JudgehostsEntity;
-use crate::models::judgehosts::hosts::ActiveModel as JudgehostsActiveModel;
 use crate::redis_client::RedisClient;
-use axum::{
-    Extension, Json,
-    extract::State,
-    http::StatusCode,
-};
-use chrono::{Utc, DateTime};
+use axum::{Extension, Json, extract::State, http::StatusCode};
+use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
 use sea_orm::{
-    ActiveModelTrait, DatabaseConnection, EntityTrait, NotSet, QueryFilter, Set, ColumnTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, NotSet, QueryFilter, Set,
 };
 use serde::{Deserialize, Serialize};
 /// Error response body.
@@ -32,7 +28,7 @@ pub struct Tasks {
     pub problem_id: String,
     pub team_id: String,
     pub contest_time: String,
-    pub test_data_count: i32, // Number of test cases for this problem
+    pub test_data_count: i32,     // Number of test cases for this problem
     pub completed_runs: Vec<i32>, // List of ordinals that have already been judged
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -45,6 +41,18 @@ pub struct Runs {
     pub run_time: f32,
     pub internal_server_error: bool,
     pub panic_message: String,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CompileInfo {
+    pub error: bool,
+    pub start_time: String,         // Absolute time when judgement started.
+    pub start_contest_time: String, // Contest relative time when judgement started.
+    pub end_time: String,
+    pub end_contest_time: String,
+    pub max_run_time: Option<f32>,
+    pub compile_warning: Option<String>,
+    pub compile_error: Option<String>,
+    pub judgement_id: i32,
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusResponse {
@@ -191,15 +199,14 @@ pub async fn get_front(
         ))?;
 
     // Parse start time and check if exceeded 1 minute
-    let start_time = DateTime::parse_from_rfc3339(&judgement.start_time)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Failed to parse start time: {}", e),
-                }),
-            )
-        })?;
+    let start_time = DateTime::parse_from_rfc3339(&judgement.start_time).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to parse start time: {}", e),
+            }),
+        )
+    })?;
 
     let elapsed = Utc::now().signed_duration_since(start_time);
     if elapsed.num_seconds() > 60 {
@@ -216,7 +223,10 @@ pub async fn get_front(
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: format!("Judge time exceeded 1 minute (elapsed: {} seconds)", elapsed.num_seconds()),
+                error: format!(
+                    "Judge time exceeded 1 minute (elapsed: {} seconds)",
+                    elapsed.num_seconds()
+                ),
             }),
         ));
     }
@@ -283,10 +293,7 @@ pub async fn get_front(
         })?;
 
     // Extract ordinals of completed runs
-    let completed_ordinals: Vec<i32> = completed_runs
-        .into_iter()
-        .map(|run| run.ordinal)
-        .collect();
+    let completed_ordinals: Vec<i32> = completed_runs.into_iter().map(|run| run.ordinal).collect();
 
     // Create enriched task response
     let enriched_task = Tasks {
@@ -369,15 +376,14 @@ pub async fn handle_judge(
     // First, insert all runs
     for verdict in payload.into_iter() {
         if verdict.internal_server_error {
-            let _: Option<String> =
-                redis_conn.lpop("judge_queue", None).await.map_err(|e| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: format!("Redis error: {}", e),
-                        }),
-                    )
-                })?;
+            let _: Option<String> = redis_conn.lpop("judge_queue", None).await.map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: format!("Redis error: {}", e),
+                    }),
+                )
+            })?;
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
@@ -424,15 +430,14 @@ pub async fn handle_judge(
         ))?;
 
     // Check if judge time exceeded 1 minute
-    let start_time = DateTime::parse_from_rfc3339(&judgement.start_time)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Failed to parse start time: {}", e),
-                }),
-            )
-        })?;
+    let start_time = DateTime::parse_from_rfc3339(&judgement.start_time).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to parse start time: {}", e),
+            }),
+        )
+    })?;
     let elapsed = Utc::now().signed_duration_since(start_time);
     if elapsed.num_seconds() > 60 {
         let _: Option<String> = redis_conn.lpop("judge_queue", None).await.map_err(|e| {
@@ -606,6 +611,122 @@ pub async fn handle_judge(
     }
 }
 
+pub async fn compile_front(
+    auth_user: AuthUser,
+    State(db): State<DatabaseConnection>,
+    Extension(redis): Extension<RedisClient>,
+    Json(payload): Json<CompileInfo>,
+) -> Result<Json<StatusResponse>, (StatusCode, Json<ErrorResponse>)> {
+    if !auth_user.role.is_judge() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Only judgehosts can compile queue front.".to_string(),
+            }),
+        ));
+    }
+    let mut redis_conn = redis.get_connection();
+    let task_json: Option<String> = redis_conn.lindex("judge_queue", 0).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Redis error: {}", e),
+            }),
+        )
+    })?;
+
+    let task_str: String = task_json.ok_or((
+        StatusCode::NOT_FOUND,
+        Json(ErrorResponse {
+            error: "No tasks in queue".to_string(),
+        }),
+    ))?;
+
+    let task_front: Tasks = serde_json::from_str(&task_str).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to parse task: {}", e),
+            }),
+        )
+    })?;
+    if task_front.judgement_id != payload.judgement_id {
+        return Err((
+            StatusCode::NOT_ACCEPTABLE,
+            Json(ErrorResponse {
+                error: "Not queue front".to_string(),
+            }),
+        ));
+    }
+    if payload.error {
+        let mut redis_conn = redis.get_connection();
+        let fronts: Option<String> = redis_conn.lpop("judge_queue", None).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Redis error: {}", e),
+                }),
+            )
+        })?;
+        let fronts_tasks: String = fronts.ok_or((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "No tasks in queue".to_string(),
+            }),
+        ))?;
+        let task_front: Tasks = serde_json::from_str(&fronts_tasks).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to parse task: {}", e),
+                }),
+            )
+        })?;
+
+        let judgement = JudgementsEntity::find_by_id(task_front.judgement_id)
+            .one(&db)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: format!("Failed to query judgement: {}", e),
+                    }),
+                )
+            })?
+            .ok_or((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Judgement not found".to_string(),
+                }),
+            ))?;
+        let mut judgement_active: JudgementActiveModel = judgement.into();
+        judgement_active.judgement_type_id = Set(Some("CE".to_string()));
+        judgement_active.simplified_judgement_type_id = Set(Some("CE".to_string()));
+        judgement_active.compile_warning = Set(payload.compile_warning);
+        judgement_active.compile_error = Set(payload.compile_error);
+        judgement_active.end_time = Set(Utc::now().to_rfc3339());
+        judgement_active.end_contest_time = Set(payload.end_contest_time);
+        judgement_active.max_run_time = Set(Some(0.0));
+
+        let _ = judgement_active.update(&db).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to update judgement: {}", e),
+                }),
+            )
+        })?;
+        let ret = StatusResponse {
+            message: "Compile Error".to_string(),
+        };
+        return Ok(Json(ret));
+    }
+    let ret = StatusResponse {
+        message: "Done!".to_string(),
+    };
+    Ok(Json(ret))
+}
 // pub async fn handle_front_run(
 //     auth_user: AuthUser,
 //     State(db): State<DatabaseConnection>,

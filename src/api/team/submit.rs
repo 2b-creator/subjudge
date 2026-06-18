@@ -10,6 +10,7 @@ use axum::{
     http::StatusCode,
     Extension,
 };
+use chrono::Utc;
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, NotSet, Set};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -245,11 +246,13 @@ pub async fn submit_solution_id(
         simplified_judgement_type_id: Set(Option::from("PD".to_string())),
         score: Set(0.0),
         current: NotSet,
-        start_time: todo!(),
+        start_time: Set(Utc::now().to_rfc3339()),
         start_contest_time: todo!(),
-        end_time: todo!(),
+        compile_error: NotSet,
+        compile_warning: NotSet,
+        end_time: Set(Utc::now().to_rfc3339()),
         end_contest_time: todo!(),
-        max_run_time: todo!(),
+        max_run_time: Set(Some(0.0)),
     };
 
     let j_inserted: crate::models::judgements::Model = _judgements.insert(&db).await.map_err(|e| {
