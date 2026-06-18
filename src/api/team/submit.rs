@@ -18,6 +18,8 @@ use redis::AsyncCommands;
 #[derive(Deserialize)]
 pub struct SubmitInfoRequest {
     // pub id: String, // ID
+    // todo
+    pub contest_id: String,
     pub language_id: String,
     pub problem_id: String,
     pub team_id: String,
